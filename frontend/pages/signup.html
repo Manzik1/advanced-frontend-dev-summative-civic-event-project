@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account — CivicEvents</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<!--
+  ======================================================================
+  PUBLIC PAGE — No Authentication Guard Required
+  ======================================================================
+  This is a PUBLIC signup page. It does NOT call Auth.requireAuth()
+  because unauthenticated visitors must be able to register.
+
+  ROLE-BASED ACCESS CONTROL NOTES:
+  - The POST /auth/signup endpoint assigns role="user" by default.
+  - There is NO option on the frontend to select or change the role.
+  - Only the BACKEND / database admin can assign the "admin" role.
+  - This ensures that normal users CANNOT escalate their privileges
+    through the signup form.
+  ======================================================================
+-->
+<body class="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#4A2E18] via-[#7B4B28] to-[#D4A373]">
+
+    <!-- Decorative background blobs -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div class="absolute -top-40 -right-40 w-80 h-80 bg-white/10 rounded-full blur-3xl"></div>
+        <div class="absolute -bottom-40 -left-40 w-96 h-96 bg-white/10 rounded-full blur-3xl"></div>
+    </div>
+
+    <!-- Signup Card -->
+    <main class="relative z-10 w-full max-w-md mx-4 my-8" role="main">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 sm:p-10 border border-[#EADBCE]">
+            <!-- Header / Branding -->
+            <div class="text-center mb-8">
+                <span class="text-5xl" aria-hidden="true">🏛️</span>
+                <h1 class="text-2xl font-bold text-[#3D2614] mt-3">Create Your Account</h1>
+                <p class="text-stone-500 text-sm mt-1">Join CivicEvents+ and stay connected with your community</p>
+            </div>
+
+            <!-- Global error alert (hidden by default) -->
+            <div id="signup-error"
+                 class="hidden mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm flex items-center gap-2"
+                 role="alert" aria-live="polite">
+                <span class="font-bold text-base">✕</span>
+                <span id="signup-error-msg"></span>
+            </div>
+
+            <!-- Signup Form -->
+            <form id="signup-form" novalidate aria-label="Create account form">
+                <!-- Full Name -->
+                <div class="mb-4">
+                    <label for="full_name" class="block text-sm font-medium text-[#4A2E18] mb-1">
+                        Full Name
+                    </label>
+                    <input
+                        id="full_name"
+                        type="text"
+                        required
+                        autocomplete="name"
+                        placeholder="Kevin Manzi"
+                        aria-describedby="name-err"
+                        class="w-full px-4 py-2.5 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B5A2B] focus:border-[#8B5A2B] outline-none transition text-sm bg-white"
+                    />
+                    <p id="name-err" class="hidden text-red-600 text-xs mt-1" role="alert"></p>
+                </div>
+
+                <!-- Email -->
+                <div class="mb-4">
+                    <label for="email" class="block text-sm font-medium text-[#4A2E18] mb-1">
+                        Email Address
+                    </label>
+                    <input
+                        id="email"
+                        type="email"
+                        required
+                        autocomplete="email"
+                        placeholder="kevin@example.com"
+                        aria-describedby="email-err"
+                        class="w-full px-4 py-2.5 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B5A2B] focus:border-[#8B5A2B] outline-none transition text-sm bg-white"
+                    />
+                    <p id="email-err" class="hidden text-red-600 text-xs mt-1" role="alert"></p>
+                </div>
+
+                <!-- Password -->
+                <div class="mb-1">
+                    <label for="password" class="block text-sm font-medium text-[#4A2E18] mb-1">
+                        Password
+                    </label>
+                    <div class="relative">
+                        <input
+                            id="password"
+                            type="password"
+                            required
+                            autocomplete="new-password"
+                            placeholder="••••••••"
+                            aria-describedby="password-err password-policy"
+                            class="w-full px-4 py-2.5 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B5A2B] focus:border-[#8B5A2B] outline-none transition text-sm pr-11 bg-white"
+                        />
+                        <!-- Toggle password visibility -->
+                        <button
+                            type="button"
+                            id="toggle-password"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+                            aria-label="Toggle password visibility"
+                        >
+                            <svg id="eye-open" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            <svg id="eye-closed" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 012.223-3.592M6.7 6.7A9.98 9.98 0 0112 5c4.478 0 8.268 2.943 9.542 7a9.97 9.97 0 01-4.043 5.206M6.7 6.7L3 3m3.7 3.7l3.593 3.593M17.3 17.3L21 21m-3.7-3.7l-3.593-3.593M17.3 17.3l-3.593-3.593a3 3 0 00-4.114-4.114L6.7 6.7"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <p id="password-err" class="hidden text-red-600 text-xs mt-1" role="alert"></p>
+                </div>
+
+                <!-- Password Strength Meter (uses getPasswordStrength() from ui.js) -->
+                <div id="strength-meter" class="mb-4 mt-2 hidden">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-xs text-gray-500">Password strength:</span>
+                        <span id="strength-label" class="text-xs font-semibold"></span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-1.5">
+                        <div id="strength-bar" class="h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Password policy checklist -->
+                <ul id="password-policy" class="mb-4 space-y-1 text-xs text-gray-400" aria-label="Password requirements">
+                    <li id="req-length" class="flex items-center gap-1.5">
+                        <span class="req-icon">○</span> At least 8 characters
+                    </li>
+                    <li id="req-upper" class="flex items-center gap-1.5">
+                        <span class="req-icon">○</span> One uppercase letter
+                    </li>
+                    <li id="req-lower" class="flex items-center gap-1.5">
+                        <span class="req-icon">○</span> One lowercase letter
+                    </li>
+                    <li id="req-number" class="flex items-center gap-1.5">
+                        <span class="req-icon">○</span> One number
+                    </li>
+                    <li id="req-special" class="flex items-center gap-1.5">
+                        <span class="req-icon">○</span> One special character
+                    </li>
+                </ul>
+
+                <!-- Confirm Password -->
+                <div class="mb-6">
+                    <label for="confirm_password" class="block text-sm font-medium text-[#4A2E18] mb-1">
+                        Confirm Password
+                    </label>
+                    <input
+                        id="confirm_password"
+                        type="password"
+                        required
+                        autocomplete="new-password"
+                        placeholder="••••••••"
+                        aria-describedby="confirm-err"
+                        class="w-full px-4 py-2.5 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B5A2B] focus:border-[#8B5A2B] outline-none transition text-sm bg-white"
+                    />
+                    <p id="confirm-err" class="hidden text-red-600 text-xs mt-1" role="alert"></p>
+                </div>
+
+                <!-- Submit button -->
+                <button
+                    type="submit"
+                    id="signup-btn"
+                    class="w-full py-2.5 bg-[#7B4B28] hover:bg-[#5C3618] text-white font-semibold rounded-lg transition focus:ring-2 focus:ring-offset-2 focus:ring-[#8B5A2B] shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                    Create Account
+                </button>
+            </form>
+
+            <!-- Link to login -->
+            <p class="text-center text-sm text-stone-500 mt-6">
+                Already have an account?
+                <a href="login.html" class="text-[#7B4B28] hover:text-[#5C3618] font-bold transition">
+                    Sign in
+                </a>
+            </p>
+        </div>
+
+        <!-- Footer branding -->
+        <p class="text-center text-white/60 text-xs mt-6">
+            &copy; <span id="copy-year"></span> CivicEvents+. All rights reserved.
+        </p>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+    <script>
+    $(function () {
+        /*
+         * PUBLIC PAGE — Redirect Guard
+         * If the user is already logged in, redirect to dashboard.
+         */
+        if (Auth.isLoggedIn()) {
+            window.location.href = 'dashboard.html';
+            return;
+        }
+
+        // Set copyright year
+        $('#copy-year').text(new Date().getFullYear());
+
+        // ---- Toggle password visibility ----
+        $('#toggle-password').on('click', function () {
+            const $input = $('#password');
+            const isPassword = $input.attr('type') === 'password';
+            $input.attr('type', isPassword ? 'text' : 'password');
+            $('#eye-open').toggleClass('hidden', !isPassword);
+            $('#eye-closed').toggleClass('hidden', isPassword);
+        });
+
+        // ---- Real-time password strength & policy checklist ----
+        $('#password').on('input', function () {
+            const pw = $(this).val();
+
+            // Show / hide strength meter
+            if (pw.length > 0) {
+                $('#strength-meter').removeClass('hidden');
+            } else {
+                $('#strength-meter').addClass('hidden');
+            }
+
+            /*
+             * Uses getPasswordStrength() from ui.js which scores the
+             * password on 5 criteria and returns { score, label, color, percent }.
+             */
+            const strength = getPasswordStrength(pw);
+            $('#strength-bar').css('width', strength.percent + '%')
+                .removeClass('bg-red-500 bg-orange-500 bg-yellow-500 bg-blue-500 bg-green-500 bg-gray-300')
+                .addClass(strength.color);
+            $('#strength-label').text(strength.label)
+                .removeClass('text-red-500 text-orange-500 text-yellow-500 text-blue-500 text-green-500 text-gray-400')
+                .addClass(strength.color.replace('bg-', 'text-'));
+
+            // Update individual policy requirement indicators
+            updateReq('#req-length',  pw.length >= 8);
+            updateReq('#req-upper',   /[A-Z]/.test(pw));
+            updateReq('#req-lower',   /[a-z]/.test(pw));
+            updateReq('#req-number',  /\d/.test(pw));
+            updateReq('#req-special', /[\W_]/.test(pw));
+        });
+
+        /* Toggle a policy requirement item between met (green ✓) and unmet (gray ○) */
+        function updateReq(selector, met) {
+            const $el = $(selector);
+            $el.find('.req-icon').text(met ? '✓' : '○');
+            if (met) {
+                $el.removeClass('text-gray-400').addClass('text-green-600');
+            } else {
+                $el.removeClass('text-green-600').addClass('text-gray-400');
+            }
+        }
+
+        // ---- Client-side validation helpers ----
+        function showFieldError(id, msg) {
+            $(`#${id}`).text(msg).removeClass('hidden');
+        }
+
+        function clearFieldErrors() {
+            $('#name-err, #email-err, #password-err, #confirm-err').addClass('hidden').text('');
+            $('#signup-error').addClass('hidden');
+        }
+
+        function validateForm(fullName, email, password, confirmPassword) {
+            const errors = {};
+
+            // Full name
+            if (!fullName) {
+                errors.name = 'Full name is required.';
+            } else if (fullName.length < 2) {
+                errors.name = 'Full name must be at least 2 characters.';
+            }
+
+            // Email
+            if (!email) {
+                errors.email = 'Email is required.';
+            } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                errors.email = 'Please enter a valid email address.';
+            }
+
+            /*
+             * Password Policy Enforcement:
+             * Minimum 8 characters, at least one uppercase letter,
+             * one lowercase letter, one number, and one special character.
+             */
+            if (!password) {
+                errors.password = 'Password is required.';
+            } else {
+                const missing = [];
+                if (password.length < 8)        missing.push('at least 8 characters');
+                if (!/[A-Z]/.test(password))    missing.push('an uppercase letter');
+                if (!/[a-z]/.test(password))    missing.push('a lowercase letter');
+                if (!/\d/.test(password))       missing.push('a number');
+                if (!/[\W_]/.test(password))    missing.push('a special character');
+                if (missing.length > 0) {
+                    errors.password = 'Password must contain ' + missing.join(', ') + '.';
+                }
+            }
+
+            // Confirm password
+            if (!confirmPassword) {
+                errors.confirm = 'Please confirm your password.';
+            } else if (password !== confirmPassword) {
+                errors.confirm = 'Passwords do not match.';
+            }
+
+            return errors;
+        }
+
+        // ---- Form submission ----
+        $('#signup-form').on('submit', async function (e) {
+            e.preventDefault();
+            clearFieldErrors();
+
+            const fullName        = $('#full_name').val().trim();
+            const email           = $('#email').val().trim();
+            const password        = $('#password').val();
+            const confirmPassword = $('#confirm_password').val();
+
+            // Run client-side validation
+            const errors = validateForm(fullName, email, password, confirmPassword);
+
+            if (Object.keys(errors).length > 0) {
+                if (errors.name)     showFieldError('name-err', errors.name);
+                if (errors.email)    showFieldError('email-err', errors.email);
+                if (errors.password) showFieldError('password-err', errors.password);
+                if (errors.confirm)  showFieldError('confirm-err', errors.confirm);
+                return;
+            }
+
+            // Disable button and show loading state
+            const $btn = $('#signup-btn');
+            $btn.prop('disabled', true).text('Creating account…');
+
+            try {
+                /*
+                 * API Call — POST /auth/signup
+                 * Sends { full_name, email, password } to the backend.
+                 *
+                 * ROLE-BASED ACCESS CONTROL — DEFAULT ROLE ASSIGNMENT
+                 * The backend ALWAYS assigns role="user" to new accounts.
+                 * There is NO role field sent from the frontend. Only a
+                 * backend administrator can promote a user to "admin".
+                 * This prevents privilege escalation via the signup form.
+                 */
+                await Api.post('/auth/signup', {
+                    full_name: fullName,
+                    email,
+                    password
+                });
+
+                // Redirect to login page with a success indicator
+                window.location.href = 'login.html?registered=true';
+
+            } catch (err) {
+                /*
+                 * Error Handling — 4xx / 5xx responses
+                 * Common cases: 409 (email already exists), 400 (validation error),
+                 * 500 (server error).
+                 */
+                const message = (err && err.message) ? err.message : 'Signup failed. Please try again.';
+                $('#signup-error-msg').text(message);
+                $('#signup-error').removeClass('hidden');
+            } finally {
+                $btn.prop('disabled', false).text('Create Account');
+            }
+        });
+    });
+    </script>
+</body>
+</html>
