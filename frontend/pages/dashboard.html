@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — CivicEvents</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Smooth grow-up animation for bar chart bars */
+        @keyframes growUp {
+            from { transform: scaleY(0); }
+            to   { transform: scaleY(1); }
+        }
+        .bar-animate {
+            animation: growUp 0.6s ease-out forwards;
+            transform-origin: bottom;
+        }
+    </style>
+</head>
+
+<body class="bg-[#FDFBF7] min-h-screen flex flex-col">
+
+    <!-- Navbar placeholder — rendered by ui.js renderNavbar() -->
+    <div id="navbar-container"></div>
+
+    <!-- ================================================================
+         MAIN DASHBOARD CONTENT
+         ================================================================
+         This page serves TWO different views depending on the user's role:
+
+         1. ADMIN VIEW  (Auth.isAdmin() === true):
+            - Fetches data from GET /dashboard/admin
+            - Shows platform-wide stats: Total Users, Events, Promos,
+              Announcements, Registrations, Feedback, Notifications
+            - Displays a user growth bar chart (pure CSS — no chart library)
+            - Quick action buttons to Create Event, Create Announcement,
+              Create Promo, and Manage Users
+
+         2. NORMAL USER VIEW (Auth.isAdmin() === false):
+            - Fetches data from GET /dashboard/me
+            - Shows personal stats: My Registrations, My Feedback Count,
+              Unread Notifications, Total Announcements, Total Promos
+            - Quick action links: Browse Events, My Registrations, My Profile
+
+         IMPORTANT SECURITY NOTE:
+         The admin-only endpoint (GET /dashboard/admin) is ALSO protected
+         by backend middleware. Even if a normal user somehow bypasses
+         the frontend Auth.isAdmin() check and calls this endpoint, the
+         backend will reject the request with 403 Forbidden.
+         The frontend role check is a UX convenience; the backend is the
+         real security boundary.
+         ================================================================ -->
+
+    <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-8" role="main" aria-label="Dashboard">
+
+        <!-- Welcome Header -->
+        <header id="welcome-header" class="mb-8">
+            <h1 id="welcome-msg" class="text-2xl sm:text-3xl font-bold text-gray-800">
+                <!-- Populated by JS with "Welcome back, {name}!" -->
+            </h1>
+            <p id="welcome-sub" class="mt-1 text-gray-500 text-sm sm:text-base">
+                <!-- Populated by JS with role-specific subtitle -->
+            </p>
+        </header>
+
+        <!-- ============================================================
+             STATS CARDS CONTAINER
+             ============================================================
+             Shows skeleton loaders first, then replaced with real stat
+             cards once the API response arrives.
+             - Admin: 7 stat cards (platform-wide totals)
+             - Normal: 5 stat cards (personal metrics)
+             ============================================================ -->
+        <section id="stats-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-10"
+                 aria-label="Dashboard statistics" role="region">
+            <!-- Skeleton loaders inserted here by showSkeleton() -->
+        </section>
+
+        <!-- ============================================================
+             ADMIN-ONLY: User Growth Chart
+             ============================================================
+             Only rendered when Auth.isAdmin() === true.
+             A simple bar chart built with div elements and Tailwind CSS.
+             No external charting library is needed.
+             ============================================================ -->
+        <section id="chart-section" class="hidden mb-10" aria-label="User growth chart" role="region">
+            <div class="bg-white rounded-xl shadow p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">📈 User Growth (Last 6 Months)</h2>
+                <div id="chart-container" class="flex items-end gap-3 sm:gap-6 h-56 border-b border-gray-200 pt-4">
+                    <!-- Bar chart bars injected by JS -->
+                </div>
+                <div id="chart-labels" class="flex gap-3 sm:gap-6 mt-2">
+                    <!-- Month labels injected by JS -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             QUICK ACTIONS
+             ============================================================
+             Role-based quick action buttons/links:
+             - Admin: Create Event, Create Announcement, Create Promo,
+                      Manage Users
+             - Normal user: Browse Events, My Registrations, My Profile
+             ============================================================ -->
+        <section id="actions-section" class="hidden" aria-label="Quick actions" role="region">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">⚡ Quick Actions</h2>
+            <div id="actions-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Action cards injected by JS -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer placeholder — rendered by ui.js renderFooter() -->
+    <div id="footer-container"></div>
+
+    <!-- ============================================================
+         SCRIPTS
+         ============================================================ -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+
+    <script>
+    /*
+     * ================================================================
+     * DASHBOARD PAGE — Initialization
+     * ================================================================
+     *
+     * ROLE-BASED ACCESS GUARD — Step 1: Authentication Check
+     * ----------------------------------------------------------------
+     * Auth.requireAuth() is called FIRST before any content is loaded.
+     * If the user has no valid JWT token (not logged in), they are
+     * immediately redirected to the login page. This prevents
+     * unauthenticated users from ever seeing the dashboard.
+     *
+     * ROLE-BASED ACCESS GUARD — Step 2: Role-Based View Rendering
+     * ----------------------------------------------------------------
+     * After confirming the user is authenticated, Auth.isAdmin()
+     * determines which dashboard view to render:
+     *   - Admin → loadAdminDashboard()   → GET /dashboard/admin
+     *   - User  → loadUserDashboard()    → GET /dashboard/me
+     *
+     * ROLE-BASED ACCESS GUARD — Step 3: Backend Protection
+     * ----------------------------------------------------------------
+     * The admin stats endpoint (GET /dashboard/admin) is also protected
+     * by the backend's own role-checking middleware. Even if a normal
+     * user manipulates the frontend JS to call loadAdminDashboard(),
+     * the backend will reject the request with 403 Forbidden.
+     * The frontend role check is for UX only; the backend enforces
+     * real authorization.
+     * ================================================================
+     */
+    $(document).ready(function () {
+
+        /* ---- ROLE-BASED ACCESS GUARD: Require authentication ---- */
+        if (!Auth.requireAuth()) return; // Redirects to login if not authenticated
+
+        /* Render shared UI components */
+        renderNavbar();
+        renderFooter();
+
+        /* Greet the user by name */
+        const user = Auth.getUser();
+        $('#welcome-msg').text(`Welcome back, ${user.full_name}!`);
+
+        /*
+         * ROLE-BASED ACCESS GUARD — Branch by role
+         * Auth.isAdmin() checks whether the logged-in user has role === 'admin'.
+         * Admin sees management stats + create controls; normal user sees
+         * personal stats only.
+         */
+        if (Auth.isAdmin()) {
+            $('#welcome-sub').text('Here\'s an overview of the entire platform.');
+            loadAdminDashboard();
+        } else {
+            $('#welcome-sub').text('Here\'s a summary of your activity.');
+            loadUserDashboard();
+        }
+    });
+
+    /* ==================================================================
+     * ADMIN DASHBOARD — loadAdminDashboard()
+     * ==================================================================
+     *
+     * ROLE-BASED ACCESS GUARD — Admin-Only Data
+     * This function is ONLY called when Auth.isAdmin() === true.
+     * It fetches platform-wide statistics from GET /dashboard/admin,
+     * which is a backend-protected admin-only endpoint.
+     *
+     * Even if a non-admin user were to call this function directly
+     * (e.g., via the browser console), the backend would reject the
+     * request because the JWT token does not have the 'admin' role.
+     *
+     * Displays:
+     *  - 7 stat cards (Total Users, Events, Promos, Announcements,
+     *    Registrations, Feedback, Notifications)
+     *  - User growth bar chart (last 6 months)
+     *  - Admin quick action buttons
+     * ================================================================== */
+    async function loadAdminDashboard() {
+
+        /* Show skeleton loaders while data is loading */
+        showSkeleton('#stats-container', 7);
+
+        try {
+            /*
+             * ROLE-BASED ACCESS GUARD — Admin API Call
+             * GET /dashboard/admin is protected by backend admin middleware.
+             * The JWT token is automatically attached by Api.get().
+             */
+            const res = await Api.get('/dashboard/admin');
+
+            if (!res || !res.data) {
+                Toast.show('Failed to load admin dashboard data.', 'error');
+                return;
+            }
+
+            const d = res.data;
+
+            /* ---- Render Admin Stat Cards ---- */
+            const adminStats = [
+                { label: 'Total Users',         value: d.users?.total_users         ?? d.totalUsers         ?? 0, icon: '👥', color: 'from-[#4A2E18] to-[#6F4426]' },
+                { label: 'Total Events',        value: d.events?.total_events        ?? d.totalEvents        ?? 0, icon: '📅', color: 'from-[#7B4B28] to-[#9C6644]' },
+                { label: 'Total Promos',        value: d.promos?.total_promos        ?? d.totalPromos        ?? 0, icon: '🏷️', color: 'from-[#8B5A2B] to-[#B07D62]' },
+                { label: 'Total Announcements', value: d.announcements?.total_announcements ?? d.totalAnnouncements ?? 0, icon: '📢', color: 'from-[#A06535] to-[#C58F5E]' },
+                { label: 'Total Registrations', value: d.registrations?.total_registrations ?? d.totalRegistrations ?? 0, icon: '📝', color: 'from-[#5C3A21] to-[#7F5539]' },
+                { label: 'Total Feedback',      value: d.feedbacks?.total_feedback      ?? d.totalFeedback      ?? 0, icon: '💬', color: 'from-[#6F4426] to-[#A06535]' },
+                { label: 'Total Notifications', value: d.notifications?.total_notifications ?? d.totalNotifications ?? 0, icon: '🔔', color: 'from-[#8A5A36] to-[#D4A373]' }
+            ];
+
+            renderStatCards(adminStats);
+
+            /* ---- Render User Growth Chart ---- */
+            const growthData = d.user_growth || d.userGrowth;
+            if (growthData && growthData.length > 0) {
+                renderBarChart(growthData);
+            }
+
+            /* ---- Render Admin Quick Actions ---- */
+            renderAdminActions();
+
+        } catch (err) {
+            $('#stats-container').html(
+                '<p class="col-span-full text-center text-red-500 py-8">Failed to load dashboard. Please try again later.</p>'
+            );
+            Toast.show(err.message || 'Error loading admin dashboard.', 'error');
+        }
+    }
+
+    /* ==================================================================
+     * NORMAL USER DASHBOARD — loadUserDashboard()
+     * ==================================================================
+     *
+     * ROLE-BASED ACCESS GUARD — User-Level Data
+     * This function is called when Auth.isAdmin() === false.
+     * It fetches personal statistics from GET /dashboard/me, which
+     * returns data scoped to the authenticated user only.
+     *
+     * Displays:
+     *  - 5 stat cards (My Registrations, My Feedback, Unread
+     *    Notifications, Total Announcements, Total Promos)
+     *  - User quick action links
+     * ================================================================== */
+    async function loadUserDashboard() {
+
+        /* Show skeleton loaders while data is loading */
+        showSkeleton('#stats-container', 5);
+
+        try {
+            const res = await Api.get('/dashboard/me');
+
+            if (!res || !res.data) {
+                Toast.show('Failed to load dashboard data.', 'error');
+                return;
+            }
+
+            const d = res.data;
+
+            /* ---- Render User Stat Cards ---- */
+            const userStats = [
+                { label: 'My Registrations',     value: d.registrations?.total_registered_events ?? d.myRegistrations     ?? 0, icon: '📝', color: 'from-[#7B4B28] to-[#9C6644]' },
+                { label: 'My Feedback',          value: d.feedbacks?.total_feedbacks             ?? d.myFeedbackCount     ?? 0, icon: '💬', color: 'from-[#8B5A2B] to-[#B07D62]' },
+                { label: 'Unread Notifications', value: d.notifications?.unread_notifications     ?? d.unreadNotifications ?? 0, icon: '🔔', color: 'from-[#A06535] to-[#D4A373]' },
+                { label: 'Total Announcements',  value: d.announcements?.total_announcements     ?? d.totalAnnouncements  ?? 0, icon: '📢', color: 'from-[#5C3A21] to-[#7F5539]' },
+                { label: 'Total Promos',         value: d.promos?.total_promos                   ?? d.totalPromos         ?? 0, icon: '🏷️', color: 'from-[#6F4426] to-[#A06535]' }
+            ];
+
+            renderStatCards(userStats);
+
+            /* ---- Render User Quick Actions ---- */
+            renderUserActions();
+
+        } catch (err) {
+            $('#stats-container').html(
+                '<p class="col-span-full text-center text-red-500 py-8">Failed to load dashboard. Please try again later.</p>'
+            );
+            Toast.show(err.message || 'Error loading dashboard.', 'error');
+        }
+    }
+
+    /* ==================================================================
+     * SHARED HELPERS
+     * ================================================================== */
+
+    /**
+     * renderStatCards — Builds gradient stat cards from an array.
+     * Each card shows an icon, a numeric value, and a label.
+     * Uses accessible aria-label on each card for screen readers.
+     *
+     * @param {Array} stats - Array of { label, value, icon, color }
+     */
+    function renderStatCards(stats) {
+        const html = stats.map(s => `
+            <div class="bg-gradient-to-br ${s.color} rounded-xl shadow-lg p-6 text-white
+                        transform hover:scale-105 transition-transform duration-200"
+                 role="status" aria-label="${s.label}: ${s.value}">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-3xl" aria-hidden="true">${s.icon}</span>
+                    <span class="text-3xl sm:text-4xl font-extrabold">${s.value.toLocaleString()}</span>
+                </div>
+                <p class="text-sm font-medium text-white/90">${s.label}</p>
+            </div>
+        `).join('');
+
+        $('#stats-container').html(html);
+    }
+
+    /**
+     * renderBarChart — Renders a simple CSS bar chart for user growth.
+     *
+     * ROLE-BASED ACCESS GUARD — Admin Only
+     * This chart section is ONLY shown for admin users.
+     * The userGrowth data comes from the admin-only API endpoint.
+     *
+     * @param {Array} data - Array of { month, count } from the backend
+     */
+    function renderBarChart(data) {
+        /* Find the maximum value to calculate relative bar heights */
+        const max = Math.max(...data.map(d => parseInt(d.new_users ?? d.count ?? 0, 10)), 1);
+
+        /* Build bar elements */
+        const bars = data.map((item, i) => {
+            const val = parseInt(item.new_users ?? item.count ?? 0, 10);
+            const heightPercent = (val / max) * 100;
+            return `
+                <div class="flex-1 flex flex-col items-center justify-end h-full">
+                    <span class="text-xs font-bold text-[#5C3618] mb-1">${val}</span>
+                    <div class="w-full max-w-[48px] bg-gradient-to-t from-[#7B4B28] to-[#D4A373] rounded-t-md bar-animate shadow-sm"
+                         style="height: ${heightPercent}%; animation-delay: ${i * 0.1}s;"
+                         role="img" aria-label="${item.month}: ${val} new users">
+                    </div>
+                </div>`;
+        }).join('');
+
+        /* Build month labels */
+        const labels = data.map(item => `
+            <div class="flex-1 text-center text-xs text-stone-500 font-medium">${item.month}</div>
+        `).join('');
+
+        $('#chart-container').html(bars);
+        $('#chart-labels').html(labels);
+        $('#chart-section').removeClass('hidden');
+    }
+
+    /**
+     * renderAdminActions — Quick action buttons for admin users.
+     *
+     * ROLE-BASED ACCESS GUARD — Admin Quick Actions
+     * These buttons link to admin-only pages (create event, create
+     * announcement, create promo, manage users). Each destination
+     * page has its own Auth.requireAdmin() guard, so even if a
+     * normal user bookmarks one of these URLs, they will be
+     * redirected away when they try to access the target page.
+     */
+    function renderAdminActions() {
+        const actions = [
+            { label: 'Create Event',        icon: '📅', href: 'event-form.html',        desc: 'Add a new community event',       color: 'border-[#7B4B28] hover:bg-[#FAF5F0]'  },
+            { label: 'Create Announcement', icon: '📢', href: 'announcement-form.html', desc: 'Post a public announcement',      color: 'border-[#8B5A2B] hover:bg-[#FAF5F0]'  },
+            { label: 'Create Promo',        icon: '🏷️', href: 'promo-form.html',        desc: 'Launch a new promotional offer',   color: 'border-[#A06535] hover:bg-[#FAF5F0]'  },
+            { label: 'Manage Users',        icon: '👥', href: 'admin-users.html',         desc: 'View and manage platform users',   color: 'border-[#5C3A21] hover:bg-[#FAF5F0]'  }
+        ];
+
+        renderActionCards(actions);
+    }
+
+    /**
+     * renderUserActions — Quick action links for normal users.
+     *
+     * ROLE-BASED ACCESS GUARD — Normal User Quick Actions
+     * These are user-level pages that do not require admin privileges.
+     */
+    function renderUserActions() {
+        const actions = [
+            { label: 'Browse Events',    icon: '📅', href: 'events.html',            desc: 'Discover upcoming community events', color: 'border-[#7B4B28] hover:bg-[#FAF5F0]' },
+            { label: 'My Registrations', icon: '📝', href: 'my-registrations.html',  desc: 'View your event registrations',      color: 'border-[#8B5A2B] hover:bg-[#FAF5F0]' },
+            { label: 'My Profile',       icon: '👤', href: 'profile.html',           desc: 'Update your account details',        color: 'border-[#A06535] hover:bg-[#FAF5F0]' }
+        ];
+
+        renderActionCards(actions);
+    }
+
+    /**
+     * renderActionCards — Shared helper to render quick-action card links.
+     * @param {Array} actions - Array of { label, icon, href, desc, color }
+     */
+    function renderActionCards(actions) {
+        const html = actions.map(a => `
+            <a href="${a.href}"
+               class="block bg-white border-2 ${a.color} rounded-xl p-5 shadow-sm
+                      transition-all duration-200 hover:shadow-md group"
+               aria-label="${a.label}">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-2xl" aria-hidden="true">${a.icon}</span>
+                    <h3 class="font-semibold text-gray-800 group-hover:text-gray-900">${a.label}</h3>
+                </div>
+                <p class="text-sm text-gray-500">${a.desc}</p>
+            </a>
+        `).join('');
+
+        $('#actions-container').html(html);
+        $('#actions-section').removeClass('hidden');
+    }
+    </script>
+
+</body>
+</html>

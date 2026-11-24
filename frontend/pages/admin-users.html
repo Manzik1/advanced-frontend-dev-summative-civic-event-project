@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Users — CivicEvents Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FDFBF7] min-h-screen flex flex-col">
+
+    <div id="navbar-container"></div>
+
+    <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-8" role="main">
+
+        <!-- Page Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-3xl font-bold text-[#3D2614]">User Management</h1>
+                    <span class="text-xs uppercase bg-[#D4A373] text-[#2E1A0C] font-extrabold px-2.5 py-0.5 rounded">Admin Only</span>
+                </div>
+                <p class="text-stone-500 mt-1">Review registered accounts, monitor activity, and enable or disable user access</p>
+            </div>
+        </div>
+
+        <!-- Filter & Search Bar --
+        <div class="bg-white rounded-xl shadow p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 border border-[#EADBCE]">
+            <div class="w-full sm:w-72">
+                <input id="user-search" type="text" placeholder="Search by name or email..."
+                       class="w-full px-4 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+            </div>
+            <div class="flex items-center gap-2 w-full sm:w-auto">
+                <label for="status-filter" class="text-xs font-semibold text-[#5C3618]">Status:</label>
+                <select id="status-filter" class="px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+                    <option value="all">All Accounts</option>
+                    <option value="active">Active Only</option>
+                    <option value="disabled">Disabled Only</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Users Table Card -->
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-[#EADBCE]">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm" aria-label="System users table">
+                    <thead class="bg-[#FAF7F2] text-[#5C3618] text-xs uppercase border-b border-[#EADBCE]">
+                        <tr>
+                            <th class="px-6 py-4 font-bold">User</th>
+                            <th class="px-6 py-4 font-bold">Role</th>
+                            <th class="px-6 py-4 font-bold">Status</th>
+                            <th class="px-6 py-4 font-bold">Joined Date</th>
+                            <th class="px-6 py-4 font-bold text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-table-body" class="divide-y divide-[#EADBCE]/50">
+                        <!-- Populated dynamically via jQuery -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Empty State / Loading State placeholder -->
+            <div id="table-status-message" class="hidden p-8 text-center text-stone-500"></div>
+        </div>
+
+    </main>
+
+    <div id="footer-container"></div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+
+    <script>
+    /*
+     * ======================================================================
+     * ROLE-BASED ACCESS CONTROL — ADMIN USER MANAGEMENT
+     * ======================================================================
+     * 1. Auth.requireAdmin():
+     *    - Guards this entire page so ONLY administrators can load it.
+     *    - If a normal user visits this page directly, they are immediately
+     *      redirected to dashboard.html with an access-denied toast.
+     *
+     * 2. Backend Enforcement:
+     *    - GET /api/users, PATCH /api/users/:id/enable, and
+     *      PATCH /api/users/:id/disable are strictly guarded on the backend
+     *      by authorize(['admin']) middleware.
+     *
+     * 3. Role Immutability Rule:
+     *    - Notice there is intentionally NO role change dropdown or button.
+     *    - Assignment specification explicitly states: "Admins cannot change
+     *      a user's role via UI according to rules."
+     *    - Admins can only view profiles and enable/disable account access.
+     * ======================================================================
+     */
+    $(document).ready(function () {
+        if (!Auth.requireAdmin()) return;
+
+        renderNavbar();
+        renderFooter();
+
+        let allUsers = [];
+
+        loadUsers();
+
+        async function loadUsers() {
+            $('#users-table-body').html(`
+                <tr>
+                    <td colspan="5" class="px-6 py-8 text-center text-gray-400">Loading user accounts...</td>
+                </tr>
+            `);
+
+            try {
+                const res = await Api.get('/users?page=1&limit=100');
+                allUsers = (res && res.data) ? res.data : [];
+                renderUsersTable();
+            } catch (err) {
+                $('#users-table-body').html(`
+                    <tr>
+                        <td colspan="5" class="px-6 py-8 text-center text-red-500">Failed to load users. ${err.message || ''}</td>
+                    </tr>
+                `);
+            }
+        }
+
+        function filterUsers() {
+            const query = $('#user-search').val().toLowerCase().trim();
+            const statusFilter = $('#status-filter').val();
+
+            return allUsers.filter(u => {
+                const matchesSearch = (u.full_name && u.full_name.toLowerCase().includes(query)) ||
+                                      (u.email && u.email.toLowerCase().includes(query));
+                if (!matchesSearch) return false;
+
+                if (statusFilter === 'active' && !u.is_active) return false;
+                if (statusFilter === 'disabled' && u.is_active) return false;
+
+                return true;
+            });
+        }
+
+        function renderUsersTable() {
+            const filtered = filterUsers();
+
+            if (filtered.length === 0) {
+                $('#users-table-body').html(`
+                    <tr>
+                        <td colspan="5" class="px-6 py-8 text-center text-gray-400">No users found matching your filters.</td>
+                    </tr>
+                `);
+                return;
+            }
+
+            const currentAdmin = Auth.getUser();
+
+            const rowsHtml = filtered.map(u => {
+                const isSelf = currentAdmin && currentAdmin.id === u.id;
+                const isAdmin = u.role === 'admin';
+
+                return `
+                <tr class="hover:bg-[#FAF7F2] transition">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-full bg-[#F5EBE0] text-[#5C3618] font-bold flex items-center justify-center text-sm border border-[#EADBCE]">
+                                ${(u.full_name || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <p class="font-bold text-[#3D2614]">${u.full_name} ${isSelf ? '<span class="text-xs text-[#7B4B28] font-semibold">(You)</span>' : ''}</p>
+                                <p class="text-xs text-stone-500">${u.email}</p>
+                            </div>
+                        </div>
+                    </td>
+
+                    <td class="px-6 py-4">
+                        <span class="text-xs font-bold px-2.5 py-1 rounded-full ${isAdmin ? 'bg-[#D4A373] text-[#2E1A0C]' : 'bg-stone-100 text-stone-700'}">
+                            ${isAdmin ? '👑 ADMIN' : 'USER'}
+                        </span>
+                    </td>
+
+                    <td class="px-6 py-4">
+                        <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                            <span class="w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-green-600' : 'bg-red-600'}"></span>
+                            ${u.is_active ? 'Active' : 'Disabled'}
+                        </span>
+                    </td>
+
+                    <td class="px-6 py-4 text-xs text-stone-500">
+                        ${formatDate(u.created_at)}
+                    </td>
+
+                    <!--
+                      ======================================================================
+                      ROLE-BASED ACCESS CONTROL — User Enable / Disable
+                      ======================================================================
+                      Admins can enable or disable user accounts.
+                      Self-disabling is prevented in the UI for safety.
+                      ======================================================================
+                    -->
+                    <td class="px-6 py-4 text-right">
+                        ${isSelf ? `
+                            <span class="text-xs text-stone-400 italic">Self (Active)</span>
+                        ` : `
+                            <button class="toggle-status-btn px-3 py-1.5 text-xs font-semibold rounded-lg transition ${u.is_active ? 'border border-red-300 text-red-600 hover:bg-red-50' : 'bg-[#7B4B28] hover:bg-[#5C3618] text-white'}"
+                                    data-id="${u.id}" data-name="${u.full_name}" data-active="${u.is_active}">
+                                ${u.is_active ? 'Disable Access' : 'Enable Access'}
+                            </button>
+                        `}
+                    </td>
+                </tr>`;
+            }).join('');
+
+            $('#users-table-body').html(rowsHtml);
+        }
+
+        // Search & filter listeners
+        $('#user-search, #status-filter').on('input change', function () {
+            renderUsersTable();
+        });
+
+        // Toggle user active status (Enable / Disable)
+        $(document).on('click', '.toggle-status-btn', async function () {
+            const userId = $(this).data('id');
+            const userName = $(this).data('name');
+            const isActive = $(this).data('active') === true;
+
+            const actionVerb = isActive ? 'disable' : 'enable';
+            if (!confirm(`Are you sure you want to ${actionVerb} access for ${userName}?`)) return;
+
+            try {
+                if (isActive) {
+                    await Api.patch(`/users/${userId}/disable`);
+                    Toast.show(`Account for ${userName} has been disabled.`, 'warning');
+                } else {
+                    await Api.patch(`/users/${userId}/enable`);
+                    Toast.show(`Account for ${userName} has been enabled.`, 'success');
+                }
+                loadUsers();
+            } catch (err) {
+                Toast.show(err.message || 'Failed to update user status.', 'error');
+            }
+        });
+    });
+    </script>
+</body>
+</html>
