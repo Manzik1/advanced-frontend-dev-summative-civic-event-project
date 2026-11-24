@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Announcement — CivicEvents</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FDFBF7] min-h-screen flex flex-col">
+
+    <div id="navbar-container"></div>
+
+    <main class="flex-1 max-w-2xl mx-auto w-full px-4 py-8" role="main">
+
+        <a href="announcements.html" class="inline-flex items-center gap-1.5 text-sm font-semibold text-[#7B4B28] hover:text-[#5C3618] mb-6 transition">
+            <span>&larr;</span> Back to Announcements
+        </a>
+
+        <div class="bg-white rounded-2xl shadow-xl p-6 sm:p-10 border border-[#EADBCE]">
+            <div class="mb-6 border-b border-[#EADBCE] pb-4">
+                <span class="text-xs uppercase tracking-wider font-extrabold bg-[#D4A373] text-[#2E1A0C] px-2.5 py-1 rounded">Admin Action</span>
+                <h1 id="form-heading" class="text-2xl sm:text-3xl font-extrabold text-[#3D2614] mt-2">Post Audio Announcement</h1>
+                <p class="text-stone-500 text-sm mt-1">Record or upload an audio announcement broadcasted to all citizens</p>
+            </div>
+
+            <div id="form-error" class="hidden mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm flex items-center gap-2" role="alert">
+                <span class="font-bold">✕</span>
+                <span id="form-error-msg"></span>
+            </div>
+
+            <form id="announcement-form" class="space-y-6" novalidate>
+                <!-- Title -->
+                <div>
+                    <label for="announcement-title" class="block text-sm font-semibold text-[#4A2E18] mb-1">Announcement Title *</label>
+                    <input id="announcement-title" type="text" required placeholder="e.g. Boil Water Advisory Lifted for Downtown Sector"
+                           class="w-full px-4 py-2.5 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+                </div>
+
+                <!-- Audio Upload -->
+                <div>
+                    <label for="announcement-audio" class="block text-sm font-semibold text-[#4A2E18] mb-1">
+                        Audio File <span id="audio-required-label">*</span>
+                    </label>
+                    <p class="text-xs text-stone-500 mb-2">Supported formats: MP3, WAV, M4A, OGG. Max file size: 5 MB.</p>
+                    <input id="announcement-audio" type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/ogg"
+                           class="block w-full text-sm text-stone-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#F5EBE0] file:text-[#5C3618] hover:file:bg-[#EADBCE] cursor-pointer">
+
+                    <!-- Audio preview player -->
+                    <div id="audio-preview-container" class="hidden mt-3">
+                        <p class="text-xs font-semibold text-[#5C3618] mb-1">Audio Preview:</p>
+                        <audio id="audio-preview" controls class="w-full max-w-md"></audio>
+                    </div>
+                </div>
+
+                <!-- Published Checkbox -->
+                <div class="flex items-center gap-2">
+                    <input id="announcement-published" type="checkbox" checked class="h-4 w-4 text-[#7B4B28] rounded border-stone-300 focus:ring-[#8B5A2B]">
+                    <label for="announcement-published" class="text-sm font-medium text-stone-700">Publish immediately to the public portal</label>
+                </div>
+
+                <!-- Submit / Cancel -->
+                <div class="flex items-center justify-end gap-3 pt-4 border-t border-[#EADBCE]">
+                    <a href="announcements.html" class="px-5 py-2.5 rounded-lg border border-stone-300 text-stone-700 text-sm font-semibold hover:bg-[#FAF5F0] transition">Cancel</a>
+                    <button type="submit" id="save-btn" class="px-6 py-2.5 rounded-lg bg-[#7B4B28] hover:bg-[#5C3618] text-white text-sm font-semibold shadow transition">
+                        Save Announcement
+                    </button>
+                </div>
+            </form>
+        </div>
+
+    </main>
+
+    <div id="footer-container"></div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+
+    <script>
+    /*
+     * ======================================================================
+     * ROLE-BASED ACCESS GUARD — ADMIN-ONLY PAGE
+     * ======================================================================
+     * Auth.requireAdmin():
+     * Restricts this announcement authoring view to administrators only.
+     * Normal users will be kicked back to the dashboard with an error.
+     * The backend validates role === 'admin' before saving changes.
+     * ======================================================================
+     */
+    $(document).ready(async function () {
+        if (!Auth.requireAdmin()) return;
+
+        renderNavbar();
+        renderFooter();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const announcementId = urlParams.get('id');
+        const isEditMode = !!announcementId;
+
+        if (isEditMode) {
+            $('#form-heading').text('Edit Announcement');
+            $('#save-btn').text('Update Announcement');
+            $('#audio-required-label').text('(Optional if keeping existing audio)');
+            await loadAnnouncementData(announcementId);
+        }
+
+        // Live audio file validation and preview
+        $('#announcement-audio').on('change', function () {
+            const file = this.files[0];
+            if (!file) {
+                $('#audio-preview-container').addClass('hidden');
+                return;
+            }
+
+            // Max file size 5MB
+            if (file.size > 5 * 1024 * 1024) {
+                Toast.show('Audio file too large! Maximum limit is 5MB.', 'error');
+                $(this).val('');
+                $('#audio-preview-container').addClass('hidden');
+                return;
+            }
+
+            const validExts = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/ogg', 'audio/x-m4a'];
+            if (!validExts.includes(file.type) && !/\.(mp3|wav|m4a|ogg)$/i.test(file.name)) {
+                Toast.show('Invalid audio format! Only MP3, WAV, M4A, and OGG allowed.', 'error');
+                $(this).val('');
+                $('#audio-preview-container').addClass('hidden');
+                return;
+            }
+
+            const objectUrl = URL.createObjectURL(file);
+            $('#audio-preview').attr('src', objectUrl);
+            $('#audio-preview-container').removeClass('hidden');
+        });
+
+        async function loadAnnouncementData(id) {
+            try {
+                const res = await Api.get(`/announcements/${id}`);
+                const data = res.data;
+                $('#announcement-title').val(data.title || '');
+                $('#announcement-published').prop('checked', data.published !== false);
+
+                if (data.audio_url) {
+                    $('#audio-preview').attr('src', data.audio_url);
+                    $('#audio-preview-container').removeClass('hidden');
+                }
+            } catch (err) {
+                Toast.show('Failed to load announcement details.', 'error');
+            }
+        }
+
+        $('#announcement-form').on('submit', async function (e) {
+            e.preventDefault();
+            $('#form-error').addClass('hidden');
+
+            const title = $('#announcement-title').val().trim();
+            const published = $('#announcement-published').is(':checked');
+            const audioFile = $('#announcement-audio')[0].files[0];
+
+            if (!title) {
+                $('#form-error-msg').text('Announcement title is required.');
+                $('#form-error').removeClass('hidden');
+                return;
+            }
+
+            if (!isEditMode && !audioFile) {
+                $('#form-error-msg').text('An audio file must be selected.');
+                $('#form-error').removeClass('hidden');
+                return;
+            }
+
+            const $btn = $('#save-btn');
+            $btn.prop('disabled', true).text('Saving...');
+
+            try {
+                const formData = new FormData();
+                formData.append('title', title);
+                formData.append('published', published);
+                if (audioFile) {
+                    formData.append('audio', audioFile);
+                }
+
+                if (isEditMode) {
+                    await Api.put(`/announcements/${announcementId}`, formData);
+                    Toast.show('Announcement updated successfully!', 'success');
+                } else {
+                    await Api.post('/announcements', formData);
+                    Toast.show('Announcement posted & notification broadcasted!', 'success');
+                }
+
+                setTimeout(() => {
+                    window.location.href = 'announcements.html';
+                }, 1000);
+
+            } catch (err) {
+                $('#form-error-msg').text(err.message || 'Error saving announcement.');
+                $('#form-error').removeClass('hidden');
+                $btn.prop('disabled', false).text(isEditMode ? 'Update Announcement' : 'Save Announcement');
+            }
+        });
+    });
+    </script>
+</body>
+</html>

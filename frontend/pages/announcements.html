@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcements — CivicEvents</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FDFBF7] min-h-screen flex flex-col">
+
+    <div id="navbar-container"></div>
+
+    <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-8" role="main">
+
+        <!-- Page Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-[#3D2614]">Public Audio Announcements</h1>
+                <p class="text-stone-500 mt-1">Listen to spoken city notices, alerts, and community updates</p>
+            </div>
+
+            <!--
+              ======================================================================
+              ROLE-BASED ACCESS GUARD — Admin-Only Announcement Creation
+              ======================================================================
+              The "Create Announcement" button is visible ONLY to administrators.
+              Normal users cannot post announcements and will never see this button.
+              ======================================================================
+            -->
+            <div id="admin-create-announcement" class="hidden">
+                <a href="announcement-form.html"
+                   class="inline-flex items-center gap-2 bg-[#7B4B28] hover:bg-[#5C3618] text-white px-5 py-2.5 rounded-lg font-medium shadow transition">
+                    <span>📢</span>
+                    <span>Post Announcement</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Announcements Grid -->
+        <section id="announcements-container" class="space-y-4 mb-8" aria-label="Announcements list">
+            <!-- Populated dynamically via jQuery -->
+        </section>
+
+    </main>
+
+    <div id="footer-container"></div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+
+    <script>
+    /*
+     * ======================================================================
+     * ROLE-BASED ACCESS CONTROL — ANNOUNCEMENTS MODULE
+     * ======================================================================
+     * - Auth.requireAuth(): Enforces login requirement for viewing the page.
+     * - Auth.isAdmin():
+     *   * Admins can create new announcements (via announcement-form.html).
+     *   * Admins can publish / unpublish announcements.
+     *   * Admins can delete announcements (DELETE /api/announcements/:id).
+     *   * Normal users can only listen to published announcements.
+     * ======================================================================
+     */
+    $(document).ready(function () {
+        if (!Auth.requireAuth()) return;
+
+        renderNavbar();
+        renderFooter();
+
+        // Reveal admin create button if user is admin
+        if (Auth.isAdmin()) {
+            $('#admin-create-announcement').removeClass('hidden');
+        }
+
+        loadAnnouncements();
+
+        async function loadAnnouncements() {
+            showSkeleton('#announcements-container', 3);
+
+            try {
+                const res = await Api.get('/announcements');
+                let items = (res && res.data) ? res.data : [];
+
+                const isAdmin = Auth.isAdmin();
+
+                // Normal users only see published announcements
+                if (!isAdmin) {
+                    items = items.filter(a => a.published === true);
+                }
+
+                if (items.length === 0) {
+                    $('#announcements-container').html(`
+                        <div class="bg-white rounded-xl shadow p-8 text-center text-gray-500">
+                            <span class="text-4xl block mb-2">📢</span>
+                            <p class="text-lg font-medium">No announcements published at this time.</p>
+                        </div>
+                    `);
+                    return;
+                }
+
+                const listHtml = items.map(a => `
+                    <article class="bg-white rounded-xl shadow p-6 border border-[#EADBCE] flex flex-col md:flex-row md:items-center justify-between gap-6 transition hover:shadow-md" aria-label="${a.title}">
+                        <div class="flex-1 space-y-2">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs bg-[#F5EBE0] text-[#5C3618] font-bold px-2 py-0.5 rounded">Audio Notice</span>
+                                <span class="text-xs text-stone-400">📅 ${formatDateTime(a.created_at)}</span>
+                                ${isAdmin ? `
+                                    <span class="text-xs font-bold px-2 py-0.5 rounded ${a.published ? 'bg-green-100 text-green-800' : 'bg-stone-100 text-stone-600'}">
+                                        ${a.published ? 'Published' : 'Draft / Unpublished'}
+                                    </span>
+                                ` : ''}
+                            </div>
+                            <h2 class="text-lg font-bold text-[#3D2614]">${a.title}</h2>
+
+                            <!-- Accessible HTML5 Audio Player -->
+                            <div class="pt-2">
+                                <audio controls class="w-full max-w-lg" preload="metadata" aria-label="Audio announcement: ${a.title}">
+                                    <source src="${a.audio_url}" type="audio/mpeg">
+                                    <source src="${a.audio_url}" type="audio/wav">
+                                    <source src="${a.audio_url}" type="audio/ogg">
+                                    Your browser does not support the audio element.
+                                </audio>
+                            </div>
+                        </div>
+
+                        <!--
+                          ======================================================================
+                          ROLE-BASED ACCESS GUARD:
+                          Admin management actions (Publish/Unpublish toggle, Edit, Delete).
+                          Only visible and accessible to administrators.
+                          ======================================================================
+                        -->
+                        ${isAdmin ? `
+                        <div class="flex items-center gap-2 border-t md:border-t-0 pt-3 md:pt-0">
+                            <button class="toggle-publish-btn px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${a.published ? 'border-[#8B5A2B] text-[#8B5A2B] hover:bg-[#FAF5F0]' : 'border-green-600 text-green-700 hover:bg-green-50'}" data-id="${a.id}" data-published="${a.published}">
+                                ${a.published ? 'Unpublish' : 'Publish'}
+                            </button>
+                            <a href="announcement-form.html?id=${a.id}" class="p-2 text-[#7B4B28] hover:bg-[#FAF5F0] rounded-lg transition" title="Edit announcement" aria-label="Edit announcement">✏️</a>
+                            <button class="delete-announcement-btn p-2 text-red-600 hover:bg-red-50 rounded-lg transition" data-id="${a.id}" data-title="${a.title}" title="Delete announcement" aria-label="Delete announcement">🗑️</button>
+                        </div>
+                        ` : ''}
+                    </article>
+                `).join('');
+
+                $('#announcements-container').html(listHtml);
+
+            } catch (err) {
+                $('#announcements-container').html('<p class="text-red-500 text-center py-6">Failed to load announcements.</p>');
+            }
+        }
+
+        /*
+         * ROLE-BASED ACCESS GUARD — Publish / Unpublish Toggle (Admin Only)
+         */
+        $(document).on('click', '.toggle-publish-btn', async function () {
+            if (!Auth.isAdmin()) return;
+            const id = $(this).data('id');
+            const isPublished = $(this).data('published') === true;
+
+            try {
+                if (isPublished) {
+                    await Api.patch(`/announcements/${id}/unpublish`);
+                    Toast.show('Announcement unpublished.', 'info');
+                } else {
+                    await Api.patch(`/announcements/${id}/publish`);
+                    Toast.show('Announcement published successfully!', 'success');
+                }
+                loadAnnouncements();
+            } catch (err) {
+                Toast.show(err.message || 'Action failed.', 'error');
+            }
+        });
+
+        /*
+         * ROLE-BASED ACCESS GUARD — Delete Announcement (Admin Only)
+         */
+        $(document).on('click', '.delete-announcement-btn', async function () {
+            if (!Auth.isAdmin()) return;
+            const id = $(this).data('id');
+            const title = $(this).data('title');
+            if (!confirm(`Delete announcement "${title}"?`)) return;
+
+            try {
+                await Api.delete(`/announcements/${id}`);
+                Toast.show('Announcement deleted successfully.', 'success');
+                loadAnnouncements();
+            } catch (err) {
+                Toast.show(err.message || 'Failed to delete announcement.', 'error');
+            }
+        });
+    });
+    </script>
+</body>
+</html>
