@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Event — CivicEvents</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FDFBF7] min-h-screen flex flex-col">
+
+    <div id="navbar-container"></div>
+
+    <main class="flex-1 max-w-3xl mx-auto w-full px-4 py-8" role="main">
+
+        <!-- Back Link -->
+        <a href="events.html" class="inline-flex items-center gap-1.5 text-sm font-semibold text-[#7B4B28] hover:text-[#5C3618] mb-6 transition">
+            <span>&larr;</span> Back to Events
+        </a>
+
+        <!-- Form Card -->
+        <div class="bg-white rounded-2xl shadow-xl p-6 sm:p-10 border border-[#EADBCE]">
+            <div class="mb-6 border-b border-[#EADBCE] pb-4">
+                <span class="text-xs uppercase tracking-wider font-extrabold bg-[#D4A373] text-[#2E1A0C] px-2.5 py-1 rounded">Admin Action</span>
+                <h1 id="form-heading" class="text-2xl sm:text-3xl font-extrabold text-[#3D2614] mt-2">Create New Event</h1>
+                <p class="text-stone-500 text-sm mt-1">Publish an accessible event for city residents</p>
+            </div>
+
+            <!-- Form error banner -->
+            <div id="form-error" class="hidden mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm flex items-center gap-2" role="alert">
+                <span class="font-bold">✕</span>
+                <span id="form-error-msg"></span>
+            </div>
+
+            <form id="event-form" class="space-y-6" novalidate>
+                <!-- Title -->
+                <div>
+                    <label for="event-title" class="block text-sm font-semibold text-[#4A2E18] mb-1">Event Title *</label>
+                    <input id="event-title" type="text" required placeholder="e.g. Annual City Marathon & Health Fair"
+                           class="w-full px-4 py-2.5 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+                </div>
+
+                <!-- Description -->
+                <div>
+                    <label for="event-description" class="block text-sm font-semibold text-[#4A2E18] mb-1">Description</label>
+                    <textarea id="event-description" rows="4" placeholder="Detailed schedule, accessibility features, wheelchair accessibility, etc."
+                              class="w-full px-4 py-2.5 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white"></textarea>
+                </div>
+
+                <!-- Location -->
+                <div>
+                    <label for="event-location" class="block text-sm font-semibold text-[#4A2E18] mb-1">Location / Venue *</label>
+                    <input id="event-location" type="text" required placeholder="e.g. City Hall Plaza, 123 Main St"
+                           class="w-full px-4 py-2.5 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+                </div>
+
+                <!-- Dates Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="event-starts-at" class="block text-sm font-semibold text-[#4A2E18] mb-1">Starts At *</label>
+                        <input id="event-starts-at" type="datetime-local" required
+                               class="w-full px-4 py-2.5 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+                    </div>
+                    <div>
+                        <label for="event-ends-at" class="block text-sm font-semibold text-[#4A2E18] mb-1">Ends At *</label>
+                        <input id="event-ends-at" type="datetime-local" required
+                               class="w-full px-4 py-2.5 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+                    </div>
+                </div>
+
+                <!-- Image Upload with Preview -->
+                <div>
+                    <label class="block text-sm font-semibold text-[#4A2E18] mb-1">Event Banner Image (Optional)</label>
+                    <p class="text-xs text-stone-500 mb-2">Accepted formats: JPG, PNG, GIF. Max file size: 2 MB.</p>
+
+                    <input id="event-image" type="file" accept="image/jpeg,image/png,image/gif"
+                           class="block w-full text-sm text-stone-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#F5EBE0] file:text-[#5C3618] hover:file:bg-[#EADBCE] cursor-pointer">
+
+                    <!-- Image Preview Container -->
+                    <div id="image-preview-container" class="hidden mt-4">
+                        <p class="text-xs font-semibold text-[#5C3618] mb-1">Preview:</p>
+                        <div class="h-48 w-full max-w-md rounded-xl overflow-hidden border border-[#EADBCE]">
+                            <img id="image-preview" src="" alt="Image preview" class="w-full h-full object-cover">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex items-center justify-end gap-3 pt-4 border-t border-[#EADBCE]">
+                    <a href="events.html" class="px-5 py-2.5 rounded-lg border border-stone-300 text-stone-700 text-sm font-semibold hover:bg-[#FAF5F0] transition">Cancel</a>
+                    <button type="submit" id="save-btn" class="px-6 py-2.5 rounded-lg bg-[#7B4B28] hover:bg-[#5C3618] text-white text-sm font-semibold shadow transition">
+                        Save Event
+                    </button>
+                </div>
+            </form>
+        </div>
+
+    </main>
+
+    <div id="footer-container"></div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+
+    <script>
+    /*
+     * ======================================================================
+     * ROLE-BASED ACCESS GUARD — ADMIN-ONLY PAGE
+     * ======================================================================
+     * Auth.requireAdmin():
+     * - First checks if user is authenticated (via Auth.requireAuth()).
+     * - Next verifies that user.role === 'admin' (via Auth.isAdmin()).
+     * - If the user is a normal user, they are immediately redirected to
+     *   dashboard.html and shown an "Access Denied" error message.
+     * - On the backend, POST /api/events and PUT /api/events/:id enforce
+     *   authorize(['admin']) to guarantee strict server-side security.
+     * ======================================================================
+     */
+    $(document).ready(async function () {
+        if (!Auth.requireAdmin()) return;
+
+        renderNavbar();
+        renderFooter();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('id');
+        const isEditMode = !!eventId;
+
+        if (isEditMode) {
+            $('#form-heading').text('Edit Event');
+            $('#save-btn').text('Update Event');
+            await loadEventData(eventId);
+        }
+
+        // Live image preview & client-side validation
+        $('#event-image').on('change', function () {
+            const file = this.files[0];
+            if (!file) {
+                $('#image-preview-container').addClass('hidden');
+                return;
+            }
+
+            // Client-side file size guard (2 MB)
+            if (file.size > 2 * 1024 * 1024) {
+                Toast.show('File too large! Max file size is 2MB.', 'error');
+                $(this).val('');
+                $('#image-preview-container').addClass('hidden');
+                return;
+            }
+
+            // Client-side format guard
+            const validTypes = ['image/jpeg', 'image/png', 'image/gif'];
+            if (!validTypes.includes(file.type)) {
+                Toast.show('Invalid image format! Only JPG, PNG, and GIF allowed.', 'error');
+                $(this).val('');
+                $('#image-preview-container').addClass('hidden');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                $('#image-preview').attr('src', e.target.result);
+                $('#image-preview-container').removeClass('hidden');
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Load existing event data when in edit mode
+        async function loadEventData(id) {
+            try {
+                const res = await Api.get(`/events/${id}`);
+                const ev = res.data;
+                $('#event-title').val(ev.title || '');
+                $('#event-description').val(ev.description || '');
+                $('#event-location').val(ev.location || '');
+
+                if (ev.starts_at) {
+                    const d = new Date(ev.starts_at);
+                    $('#event-starts-at').val(d.toISOString().slice(0, 16));
+                }
+                if (ev.ends_at) {
+                    const d = new Date(ev.ends_at);
+                    $('#event-ends-at').val(d.toISOString().slice(0, 16));
+                }
+
+                if (ev.metadata && ev.metadata.image_url) {
+                    $('#image-preview').attr('src', ev.metadata.image_url);
+                    $('#image-preview-container').removeClass('hidden');
+                }
+            } catch (err) {
+                Toast.show('Failed to load event data.', 'error');
+            }
+        }
+
+        // Form submission
+        $('#event-form').on('submit', async function (e) {
+            e.preventDefault();
+            $('#form-error').addClass('hidden');
+
+            const title = $('#event-title').val().trim();
+            const description = $('#event-description').val().trim();
+            const location = $('#event-location').val().trim();
+            const starts_at = $('#event-starts-at').val();
+            const ends_at = $('#event-ends-at').val();
+            const imageFile = $('#event-image')[0].files[0];
+
+            if (!title || !location || !starts_at || !ends_at) {
+                $('#form-error-msg').text('Please fill in all required fields.');
+                $('#form-error').removeClass('hidden');
+                return;
+            }
+
+            if (new Date(ends_at) <= new Date(starts_at)) {
+                $('#form-error-msg').text('End time must be after the start time.');
+                $('#form-error').removeClass('hidden');
+                return;
+            }
+
+            const $btn = $('#save-btn');
+            $btn.prop('disabled', true).text('Saving event...');
+
+            try {
+                // Build multipart/form-data payload
+                const formData = new FormData();
+                formData.append('title', title);
+                formData.append('description', description);
+                formData.append('location', location);
+                formData.append('starts_at', new Date(starts_at).toISOString());
+                formData.append('ends_at', new Date(ends_at).toISOString());
+                if (imageFile) {
+                    formData.append('image', imageFile);
+                }
+
+                if (isEditMode) {
+                    await Api.put(`/events/${eventId}`, formData);
+                    Toast.show('Event updated successfully!', 'success');
+                } else {
+                    await Api.post('/events', formData);
+                    Toast.show('Event created successfully!', 'success');
+                }
+
+                setTimeout(() => {
+                    window.location.href = 'events.html';
+                }, 1000);
+
+            } catch (err) {
+                $('#form-error-msg').text(err.message || 'Operation failed.');
+                $('#form-error').removeClass('hidden');
+                $btn.prop('disabled', false).text(isEditMode ? 'Update Event' : 'Save Event');
+            }
+        });
+    });
+    </script>
+</body>
+</html>

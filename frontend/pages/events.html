@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Events — CivicEvents</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FDFBF7] min-h-screen flex flex-col">
+
+    <!-- Navigation Header -->
+    <div id="navbar-container"></div>
+
+    <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-8" role="main">
+
+        <!-- Page Header & Action Bar -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-[#3D2614]">Civic Events</h1>
+                <p class="text-stone-500 mt-1">Discover, attend, and share feedback on local city events</p>
+            </div>
+
+            <!--
+              ======================================================================
+              ROLE-BASED ACCESS GUARD — Admin-Only Event Creation
+              ======================================================================
+              The "Create Event" button is ONLY visible to administrators.
+              Normal users cannot create events and will not see this button.
+              Even if a normal user manually navigates to event-form.html,
+              both the frontend page guard and the backend API guard (authorize(['admin']))
+              will block them.
+              ======================================================================
+            -->
+            <div id="admin-create-container" class="hidden">
+                <a href="event-form.html"
+                   class="inline-flex items-center gap-2 bg-[#7B4B28] hover:bg-[#5C3618] text-white px-5 py-2.5 rounded-lg font-medium shadow transition">
+                    <span>➕</span>
+                    <span>Create Event</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Search & Filter Controls -->
+        <div class="bg-white rounded-xl shadow p-4 mb-8 grid grid-cols-1 sm:grid-cols-3 gap-4 border border-[#EADBCE]" role="search" aria-label="Filter events">
+            <!-- Search Keyword -->
+            <div>
+                <label for="search-input" class="block text-xs font-semibold text-[#5C3618] uppercase mb-1">Search Events</label>
+                <input id="search-input" type="text" placeholder="Search by title or location..."
+                       class="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+            </div>
+
+            <!-- Date Filter -->
+            <div>
+                <label for="date-filter" class="block text-xs font-semibold text-[#5C3618] uppercase mb-1">Timing</label>
+                <select id="date-filter" class="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+                    <option value="all">All Events</option>
+                    <option value="upcoming">Upcoming Events</option>
+                    <option value="past">Past Events</option>
+                </select>
+            </div>
+
+            <!-- Sort By -->
+            <div>
+                <label for="sort-filter" class="block text-xs font-semibold text-[#5C3618] uppercase mb-1">Sort By</label>
+                <select id="sort-filter" class="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+                    <option value="soonest">Starts Soonest</option>
+                    <option value="latest">Starts Latest</option>
+                    <option value="title">Title (A-Z)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Events Grid -->
+        <section id="events-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8" aria-label="Events list">
+            <!-- Populated via jQuery -->
+        </section>
+
+        <!-- Pagination Controls -->
+        <div id="pagination-controls" class="flex items-center justify-center gap-3 py-4"></div>
+
+    </main>
+
+    <!--
+      ======================================================================
+      EVENT DETAIL & REGISTRATION / FEEDBACK MODAL
+      ======================================================================
+    -->
+    <div id="event-detail-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6 sm:p-8 relative">
+            <button id="close-modal-btn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-2xl font-bold" aria-label="Close dialog">&times;</button>
+
+            <!-- Modal Content Loaded Dynamically -->
+            <div id="modal-content"></div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div id="footer-container"></div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+
+    <script>
+    /*
+     * ======================================================================
+     * ROLE-BASED ACCESS CONTROL IMPLEMENTATION IN EVENTS MODULE
+     * ======================================================================
+     * 1. Auth.requireAuth(): Protects this page so only logged-in users enter.
+     * 2. Auth.isAdmin():
+     *    - If TRUE (Admin):
+     *      * Shows "Create Event" button.
+     *      * Shows "Edit" and "Delete" buttons on every event card.
+     *      * Shows "View Attendees" list inside the event detail modal.
+     *    - If FALSE (Normal User):
+     *      * Hides all event modification/deletion controls.
+     *      * Enables "Register" / "Cancel Registration" buttons.
+     *      * Enables "Submit Feedback" form on attended events.
+     * ======================================================================
+     */
+    $(document).ready(function () {
+        if (!Auth.requireAuth()) return;
+
+        renderNavbar();
+        renderFooter();
+
+        /*
+         * ROLE-BASED ACCESS GUARD:
+         * Show admin-only "Create Event" button only if user is an administrator.
+         */
+        if (Auth.isAdmin()) {
+            $('#admin-create-container').removeClass('hidden');
+        }
+
+        let allEvents = [];
+        let userRegistrations = [];
+        let currentPage = 1;
+        const pageSize = 6;
+
+        // Load initial events and registrations
+        loadEvents();
+
+        async function loadEvents() {
+            showSkeleton('#events-grid', 6);
+            try {
+                // Fetch events
+                const eventsRes = await Api.get('/events');
+                allEvents = (eventsRes && eventsRes.data) ? eventsRes.data : [];
+
+                // Fetch current user registrations to know which events are registered
+                try {
+                    const regRes = await Api.get('/event-registrations/my-registrations');
+                    userRegistrations = (regRes && regRes.data) ? regRes.data : [];
+                } catch (e) {
+                    userRegistrations = [];
+                }
+
+                renderEvents();
+            } catch (err) {
+                $('#events-grid').html('<p class="col-span-full text-center text-red-500 py-8">Failed to load events. ' + (err.message || '') + '</p>');
+            }
+        }
+
+        function filterAndSortEvents() {
+            const query = $('#search-input').val().toLowerCase().trim();
+            const dateFilter = $('#date-filter').val();
+            const sortFilter = $('#sort-filter').val();
+            const now = new Date();
+
+            let filtered = allEvents.filter(ev => {
+                // Filter by search keyword
+                const matchesSearch = (ev.title && ev.title.toLowerCase().includes(query)) ||
+                                      (ev.location && ev.location.toLowerCase().includes(query)) ||
+                                      (ev.description && ev.description.toLowerCase().includes(query));
+                if (!matchesSearch) return false;
+
+                // Filter by timing
+                const starts = new Date(ev.starts_at);
+                if (dateFilter === 'upcoming' && starts < now) return false;
+                if (dateFilter === 'past' && starts >= now) return false;
+
+                return true;
+            });
+
+            // Sorting
+            filtered.sort((a, b) => {
+                if (sortFilter === 'soonest') return new Date(a.starts_at) - new Date(b.starts_at);
+                if (sortFilter === 'latest') return new Date(b.starts_at) - new Date(a.starts_at);
+                if (sortFilter === 'title') return (a.title || '').localeCompare(b.title || '');
+                return 0;
+            });
+
+            return filtered;
+        }
+
+        function renderEvents() {
+            const filtered = filterAndSortEvents();
+
+            if (filtered.length === 0) {
+                $('#events-grid').html(`
+                    <div class="col-span-full bg-white rounded-xl shadow p-8 text-center text-gray-500">
+                        <span class="text-4xl block mb-2">📅</span>
+                        <p class="text-lg font-medium">No events found matching your criteria.</p>
+                    </div>
+                `);
+                $('#pagination-controls').empty();
+                return;
+            }
+
+            // Pagination slice
+            const totalPages = Math.ceil(filtered.length / pageSize);
+            if (currentPage > totalPages) currentPage = 1;
+            const startIdx = (currentPage - 1) * pageSize;
+            const pageItems = filtered.slice(startIdx, startIdx + pageSize);
+
+            const isAdmin = Auth.isAdmin();
+
+            const cardsHtml = pageItems.map(ev => {
+                // Extract image from metadata if available
+                const imageUrl = (ev.metadata && ev.metadata.image_url)
+                    ? ev.metadata.image_url
+                    : 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=600&q=80';
+
+                // Check if user is registered for this event
+                const isRegistered = userRegistrations.some(r => r.event_id === ev.id && r.status === 'registered');
+
+                return `
+                <article class="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow flex flex-col" aria-label="${ev.title}">
+                    <div class="h-44 w-full bg-gray-200 overflow-hidden relative">
+                        <img src="${imageUrl}" alt="${ev.title}" class="w-full h-full object-cover transition-transform duration-300 hover:scale-105" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=600&q=80'">
+                        ${isRegistered ? '<span class="absolute top-3 right-3 bg-green-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow">✓ Registered</span>' : ''}
+                    </div>
+
+                    <div class="p-5 flex-1 flex flex-col">
+                        <div class="text-xs font-semibold text-[#7B4B28] mb-1 flex items-center gap-1">
+                            <span>📍 ${ev.location || 'Location TBD'}</span>
+                        </div>
+                        <h2 class="text-lg font-bold text-[#3D2614] line-clamp-1 mb-2">${ev.title}</h2>
+                        <p class="text-stone-500 text-xs mb-3">📅 Starts: ${formatDateTime(ev.starts_at)}</p>
+                        <p class="text-stone-600 text-sm line-clamp-2 flex-1 mb-4">${ev.description || 'No description provided.'}</p>
+
+                        <div class="border-t border-[#EADBCE]/50 pt-4 flex items-center justify-between gap-2 mt-auto">
+                            <button class="view-detail-btn px-4 py-2 bg-[#F5EBE0] hover:bg-[#EADBCE] text-[#5C3618] rounded-lg text-sm font-semibold transition" data-id="${ev.id}">
+                                Details
+                            </button>
+
+                            <!--
+                              ======================================================================
+                              ROLE-BASED ACCESS GUARD:
+                              Admin-only Edit and Delete action buttons.
+                              Hidden and not rendered for regular users.
+                              ======================================================================
+                            -->
+                            ${isAdmin ? `
+                            <div class="flex items-center gap-1">
+                                <a href="event-form.html?id=${ev.id}" class="p-2 text-[#7B4B28] hover:bg-[#FAF5F0] rounded-lg transition" title="Edit event" aria-label="Edit event">✏️</a>
+                                <button class="delete-event-btn p-2 text-red-600 hover:bg-red-50 rounded-lg transition" data-id="${ev.id}" data-title="${ev.title}" title="Delete event" aria-label="Delete event">🗑️</button>
+                            </div>
+                            ` : `
+                            <!-- Normal user quick action: Register / Cancel -->
+                            ${isRegistered ? `
+                                <button class="cancel-reg-btn text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-3 py-1.5 rounded-lg transition" data-id="${ev.id}">Cancel RSVP</button>
+                            ` : `
+                                <button class="register-btn text-xs bg-[#7B4B28] hover:bg-[#5C3618] text-white font-semibold px-3 py-1.5 rounded-lg transition shadow-sm" data-id="${ev.id}">Register</button>
+                            `}
+                            `}
+                        </div>
+                    </div>
+                </article>`;
+            }).join('');
+
+            $('#events-grid').html(cardsHtml);
+
+            // Render pagination
+            renderPagination(totalPages);
+        }
+
+        function renderPagination(totalPages) {
+            if (totalPages <= 1) {
+                $('#pagination-controls').empty();
+                return;
+            }
+
+            let html = `
+                <button id="prev-page" class="px-3 py-1.5 rounded border border-gray-300 text-sm disabled:opacity-50 font-medium hover:bg-gray-100" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>
+                <span class="text-sm font-semibold text-gray-700">Page ${currentPage} of ${totalPages}</span>
+                <button id="next-page" class="px-3 py-1.5 rounded border border-gray-300 text-sm disabled:opacity-50 font-medium hover:bg-gray-100" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>
+            `;
+            $('#pagination-controls').html(html);
+        }
+
+        // Search and filter listeners
+        $('#search-input, #date-filter, #sort-filter').on('input change', function () {
+            currentPage = 1;
+            renderEvents();
+        });
+
+        // Pagination buttons
+        $(document).on('click', '#prev-page', function () {
+            if (currentPage > 1) {
+                currentPage--;
+                renderEvents();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+
+        $(document).on('click', '#next-page', function () {
+            currentPage++;
+            renderEvents();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        /*
+         * ======================================================================
+         * ROLE-BASED ACCESS GUARD — Admin-Only Event Deletion
+         * Calls DELETE /events/:id. Backend reinforces this with authorize(['admin']).
+         * ======================================================================
+         */
+        $(document).on('click', '.delete-event-btn', async function () {
+            if (!Auth.isAdmin()) {
+                Toast.show('Access denied: Admins only.', 'error');
+                return;
+            }
+
+            const id = $(this).data('id');
+            const title = $(this).data('title');
+            if (!confirm(`Are you sure you want to delete the event "${title}"?`)) return;
+
+            try {
+                await Api.delete(`/events/${id}`);
+                Toast.show('Event deleted successfully.', 'success');
+                allEvents = allEvents.filter(e => e.id !== id);
+                renderEvents();
+            } catch (err) {
+                Toast.show(err.message || 'Failed to delete event.', 'error');
+            }
+        });
+
+        // User registration handler
+        $(document).on('click', '.register-btn', async function () {
+            const eventId = $(this).data('id');
+            try {
+                await Api.post('/event-registrations/register', { event_id: eventId });
+                Toast.show('Successfully registered for event!', 'success');
+                loadEvents();
+            } catch (err) {
+                Toast.show(err.message || 'Registration failed.', 'error');
+            }
+        });
+
+        // User cancellation handler
+        $(document).on('click', '.cancel-reg-btn', async function () {
+            const eventId = $(this).data('id');
+            if (!confirm('Cancel your registration for this event?')) return;
+            try {
+                await Api.post('/event-registrations/cancel', { event_id: eventId });
+                Toast.show('Registration cancelled.', 'info');
+                loadEvents();
+            } catch (err) {
+                Toast.show(err.message || 'Cancellation failed.', 'error');
+            }
+        });
+
+        // Open Event Detail Modal
+        $(document).on('click', '.view-detail-btn', async function () {
+            const eventId = $(this).data('id');
+            openDetailModal(eventId);
+        });
+
+        async function openDetailModal(eventId) {
+            $('#modal-content').html('<div class="py-12 text-center text-gray-500">Loading event details...</div>');
+            $('#event-detail-modal').removeClass('hidden');
+
+            try {
+                const eventRes = await Api.get(`/events/${eventId}`);
+                const ev = eventRes.data;
+                const isRegistered = userRegistrations.some(r => r.event_id === ev.id && r.status === 'registered');
+                const isAdmin = Auth.isAdmin();
+
+                // Load feedbacks for this event
+                let feedbacks = [];
+                try {
+                    const fbRes = await Api.get(`/event-feedback/event/${eventId}`);
+                    feedbacks = fbRes.data || [];
+                } catch (e) {
+                    feedbacks = [];
+                }
+
+                // Calculate average rating
+                let avgRating = 0;
+                if (feedbacks.length > 0) {
+                    const sum = feedbacks.reduce((acc, f) => acc + (f.rating || 0), 0);
+                    avgRating = (sum / feedbacks.length).toFixed(1);
+                }
+
+                const imageUrl = (ev.metadata && ev.metadata.image_url)
+                    ? ev.metadata.image_url
+                    : 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80';
+
+                let modalHtml = `
+                    <div class="space-y-6">
+                        <div class="rounded-xl overflow-hidden max-h-64 bg-gray-100">
+                            <img src="${imageUrl}" alt="${ev.title}" class="w-full h-full object-cover">
+                        </div>
+
+                        <div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs uppercase tracking-wider font-bold text-[#7B4B28]">Event Details</span>
+                                <span class="text-sm font-semibold text-amber-600">⭐ ${avgRating > 0 ? `${avgRating} / 5 (${feedbacks.length} reviews)` : 'No reviews yet'}</span>
+                            </div>
+                            <h2 id="modal-title" class="text-2xl font-bold text-[#3D2614] mt-1">${ev.title}</h2>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm bg-[#FAF7F2] p-4 rounded-xl border border-[#EADBCE]">
+                            <div><strong class="text-[#4A2E18]">📍 Location:</strong> ${ev.location}</div>
+                            <div><strong class="text-[#4A2E18]">🕒 Starts:</strong> ${formatDateTime(ev.starts_at)}</div>
+                            <div><strong class="text-[#4A2E18]">🏁 Ends:</strong> ${formatDateTime(ev.ends_at)}</div>
+                            <div><strong class="text-[#4A2E18]">🗺️ Map:</strong> <a href="https://maps.google.com/?q=${encodeURIComponent(ev.location)}" target="_blank" rel="noopener" class="text-[#7B4B28] hover:text-[#5C3618] underline font-semibold">Open Map</a></div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-sm font-bold text-[#3D2614] mb-1">About this event</h3>
+                            <p class="text-stone-600 text-sm whitespace-pre-line">${ev.description || 'No description provided.'}</p>
+                        </div>
+
+                        <!-- Registration Action Area -->
+                        <div class="p-4 rounded-xl border flex items-center justify-between ${isRegistered ? 'bg-green-50 border-green-200' : 'bg-[#FAF5F0] border-[#EADBCE]'}">
+                            <div>
+                                <p class="text-sm font-bold ${isRegistered ? 'text-green-800' : 'text-[#4A2E18]'}">
+                                    ${isRegistered ? 'You are registered for this event!' : 'Reserve your spot today'}
+                                </p>
+                                <p class="text-xs text-stone-500">Free admission for all community residents.</p>
+                            </div>
+                            ${isRegistered ? `
+                                <button class="cancel-reg-btn px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-sm rounded-lg transition" data-id="${ev.id}">Cancel RSVP</button>
+                            ` : `
+                                <button class="register-btn px-4 py-2 bg-[#7B4B28] hover:bg-[#5C3618] text-white font-semibold text-sm rounded-lg transition shadow-md" data-id="${ev.id}">Register Now</button>
+                            `}
+                        </div>
+
+                        <!--
+                          ======================================================================
+                          ROLE-BASED ACCESS GUARD:
+                          Admin-only attendees roster section.
+                          Only administrators can view the list of people registered for the event.
+                          ======================================================================
+                        -->
+                        ${isAdmin ? `
+                        <div class="border-t border-[#EADBCE] pt-4">
+                            <h3 class="text-md font-bold text-[#3D2614] mb-3 flex items-center gap-2">
+                                <span>👥 Registrants Roster</span>
+                                <span class="text-xs bg-[#D4A373] text-[#2E1A0C] px-2 py-0.5 rounded-full font-bold">Admin Only</span>
+                            </h3>
+                            <div id="attendees-list-container" class="text-sm text-stone-600">
+                                <p class="text-xs text-stone-400">Loading attendees list...</p>
+                            </div>
+                        </div>
+                        ` : ''}
+
+                        <!-- Feedback & Ratings Section -->
+                        <div class="border-t border-[#EADBCE] pt-4 space-y-4">
+                            <h3 class="text-md font-bold text-[#3D2614]">Community Feedback & Ratings</h3>
+
+                            <!-- Submit Feedback Form -->
+                            <form id="feedback-form" class="bg-[#FAF7F2] p-4 rounded-xl space-y-3 border border-[#EADBCE]" data-event-id="${ev.id}">
+                                <h4 class="text-xs uppercase font-bold text-[#5C3618]">Share Your Experience</h4>
+                                <div class="flex items-center gap-3">
+                                    <label for="feedback-rating" class="text-sm text-[#4A2E18]">Rating:</label>
+                                    <select id="feedback-rating" class="border border-stone-300 rounded px-2 py-1 text-sm bg-white" required>
+                                        <option value="5">⭐⭐⭐⭐⭐ (5 - Excellent)</option>
+                                        <option value="4">⭐⭐⭐⭐ (4 - Good)</option>
+                                        <option value="3">⭐⭐⭐ (3 - Average)</option>
+                                        <option value="2">⭐⭐ (2 - Below Average)</option>
+                                        <option value="1">⭐ (1 - Poor)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <textarea id="feedback-comment" rows="2" placeholder="Write your review or suggestions..." required
+                                              class="w-full text-sm border border-stone-300 rounded-lg p-2 focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white"></textarea>
+                                </div>
+                                <button type="submit" class="px-4 py-1.5 bg-[#7B4B28] hover:bg-[#5C3618] text-white text-xs font-semibold rounded-lg transition shadow-sm">Submit Feedback</button>
+                            </form>
+
+                            <!-- Feedback List -->
+                            <div class="space-y-2 max-h-48 overflow-y-auto">
+                                ${feedbacks.length === 0 ? '<p class="text-xs text-gray-400 italic">No feedback submitted yet. Be the first!</p>' : feedbacks.map(fb => `
+                                    <div class="p-3 bg-gray-50 rounded-lg text-xs border border-gray-100">
+                                        <div class="flex items-center justify-between font-semibold text-gray-800">
+                                            <span>${fb.full_name || 'Community Member'}</span>
+                                            <span class="text-amber-500">${'★'.repeat(fb.rating)}${'☆'.repeat(5 - fb.rating)}</span>
+                                        </div>
+                                        <p class="text-gray-600 mt-1">${fb.comment || ''}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                    </div>
+                `;
+
+                $('#modal-content').html(modalHtml);
+
+                /*
+                 * ROLE-BASED ACCESS GUARD:
+                 * Fetch event attendees only if user is an administrator.
+                 * Endpoint: GET /event-registrations/event/:id/attendees
+                 */
+                if (isAdmin) {
+                    try {
+                        const attRes = await Api.get(`/event-registrations/event/${eventId}/attendees`);
+                        const attendees = attRes.data || [];
+                        if (attendees.length === 0) {
+                            $('#attendees-list-container').html('<p class="text-xs text-gray-400 italic">No registrants yet for this event.</p>');
+                        } else {
+                            const roster = attendees.map(a => `
+                                <div class="flex items-center justify-between py-1.5 border-b border-gray-100 text-xs">
+                                    <span class="font-medium text-gray-800">${a.full_name} (${a.email})</span>
+                                    <span class="text-gray-400">Registered ${formatDate(a.created_at)}</span>
+                                </div>
+                            `).join('');
+                            $('#attendees-list-container').html(roster);
+                        }
+                    } catch (e) {
+                        $('#attendees-list-container').html('<p class="text-xs text-red-500">Failed to load attendees list.</p>');
+                    }
+                }
+
+            } catch (err) {
+                $('#modal-content').html('<p class="text-red-500 py-6 text-center">Failed to load event details.</p>');
+            }
+        }
+
+        // Close modal
+        $('#close-modal-btn').on('click', function () {
+            $('#event-detail-modal').addClass('hidden');
+        });
+
+        // Submit feedback handler
+        $(document).on('submit', '#feedback-form', async function (e) {
+            e.preventDefault();
+            const eventId = $(this).data('event-id');
+            const rating = parseInt($('#feedback-rating').val(), 10);
+            const comment = $('#feedback-comment').val().trim();
+
+            try {
+                await Api.post('/event-feedback', { event_id: eventId, rating, comment });
+                Toast.show('Feedback submitted successfully!', 'success');
+                openDetailModal(eventId);
+            } catch (err) {
+                Toast.show(err.message || 'Failed to submit feedback. You may only review once.', 'error');
+            }
+        });
+    });
+    </script>
+</body>
+</html>
