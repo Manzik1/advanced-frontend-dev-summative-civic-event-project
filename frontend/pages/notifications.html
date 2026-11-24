@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notifications — CivicEvents</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FDFBF7] min-h-screen flex flex-col">
+
+    <div id="navbar-container"></div>
+
+    <main class="flex-1 max-w-4xl mx-auto w-full px-4 py-8" role="main">
+
+        <!-- Page Header -->
+        <div class="flex items-center justify-between mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-[#3D2614]">In-App Notifications</h1>
+                <p class="text-stone-500 mt-1">Real-time alerts, event updates, and community bulletins</p>
+            </div>
+            <button id="refresh-notifications-btn" class="px-4 py-2 bg-[#F5EBE0] hover:bg-[#EADBCE] text-[#5C3618] rounded-lg text-sm font-semibold transition flex items-center gap-1.5 shadow-sm">
+                <span>🔄</span> Refresh
+            </button>
+        </div>
+
+        <!-- Notification List Container -->
+        <section id="notifications-list" class="space-y-4 mb-8" aria-label="Notifications list">
+            <!-- Populated via jQuery -->
+        </section>
+
+    </main>
+
+    <div id="footer-container"></div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+
+    <script>
+    /*
+     * ======================================================================
+     * ROLE-BASED ACCESS CONTROL — NOTIFICATIONS MODULE
+     * ======================================================================
+     * - Auth.requireAuth(): Protects the inbox so only authenticated users enter.
+     * - Auth.isAdmin():
+     *   * Admins can permanently delete notifications from the system
+     *     via DELETE /api/notifications/:id.
+     *   * Normal users can only view their targeted & broadcast notifications.
+     *     The delete button is completely hidden from normal users.
+     * ======================================================================
+     */
+    $(document).ready(function () {
+        if (!Auth.requireAuth()) return;
+
+        renderNavbar();
+        renderFooter();
+
+        loadNotifications();
+
+        $('#refresh-notifications-btn').on('click', function () {
+            loadNotifications();
+        });
+
+        async function loadNotifications() {
+            showSkeleton('#notifications-list', 4);
+
+            try {
+                const res = await Api.get('/notifications');
+                const items = (res && res.data) ? res.data : [];
+                const isAdmin = Auth.isAdmin();
+
+                if (items.length === 0) {
+                    $('#notifications-list').html(`
+                        <div class="bg-white rounded-xl shadow p-8 text-center text-gray-500">
+                            <span class="text-4xl block mb-2">🔔</span>
+                            <p class="text-lg font-medium">You have no notifications at this time.</p>
+                            <p class="text-xs text-gray-400 mt-1">Check back when new events or announcements are published.</p>
+                        </div>
+                    `);
+                    return;
+                }
+
+                const listHtml = items.map(n => {
+                    // Type badge styling with Light Chocolate tones
+                    const typeColors = {
+                        event: 'bg-[#F5EBE0] text-[#4A2E18] border border-[#EADBCE]',
+                        promo: 'bg-[#EADBCE] text-[#5C3618] border border-[#D4A373]',
+                        announcement: 'bg-[#D4A373]/25 text-[#4A2E18] border border-[#D4A373]',
+                        system: 'bg-stone-100 text-stone-800'
+                    };
+                    const badgeClass = typeColors[n.type] || 'bg-[#F5EBE0] text-[#5C3618]';
+
+                    // Deep-link to related resource from metadata
+                    let resourceLink = '';
+                    if (n.metadata) {
+                        if (n.metadata.event_id) {
+                            resourceLink = `<a href="events.html" class="inline-flex items-center gap-1 text-xs font-bold text-[#7B4B28] hover:text-[#5C3618]">View Event &rarr;</a>`;
+                        } else if (n.metadata.promo_id) {
+                            resourceLink = `<a href="promos.html" class="inline-flex items-center gap-1 text-xs font-bold text-[#7B4B28] hover:text-[#5C3618]">Watch Promo &rarr;</a>`;
+                        } else if (n.metadata.announcement_id) {
+                            resourceLink = `<a href="announcements.html" class="inline-flex items-center gap-1 text-xs font-bold text-[#7B4B28] hover:text-[#5C3618]">Listen Announcement &rarr;</a>`;
+                        }
+                    }
+
+                    return `
+                    <article class="bg-white rounded-xl shadow p-5 border border-[#EADBCE] flex flex-col sm:flex-row sm:items-start justify-between gap-4 transition hover:shadow-md" aria-label="${n.title}">
+                        <div class="flex-1 space-y-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs uppercase font-extrabold px-2.5 py-0.5 rounded-full ${badgeClass}">${n.type || 'Notice'}</span>
+                                <span class="text-xs text-stone-400">${formatDateTime(n.created_at)}</span>
+                            </div>
+                            <h2 class="text-base font-bold text-[#3D2614] mt-1">${n.title}</h2>
+                            <p class="text-sm text-stone-600 leading-relaxed">${n.message}</p>
+                            ${resourceLink ? `<div class="pt-2">${resourceLink}</div>` : ''}
+                        </div>
+
+                        <!--
+                          ======================================================================
+                          ROLE-BASED ACCESS GUARD:
+                          Admin-only Delete Notification Button.
+                          Normal users cannot delete notifications.
+                          ======================================================================
+                        -->
+                        ${isAdmin ? `
+                        <div class="self-end sm:self-center">
+                            <button class="delete-notification-btn p-2 text-red-500 hover:bg-red-50 rounded-lg text-sm transition" data-id="${n.id}" title="Delete notification (Admin only)" aria-label="Delete notification">
+                                🗑️
+                            </button>
+                        </div>
+                        ` : ''}
+                    </article>`;
+                }).join('');
+
+                $('#notifications-list').html(listHtml);
+
+            } catch (err) {
+                $('#notifications-list').html('<p class="text-red-500 text-center py-6">Failed to load notifications.</p>');
+            }
+        }
+
+        /*
+         * ROLE-BASED ACCESS GUARD — Delete Notification Action
+         * Only executable by users with the "admin" role.
+         */
+        $(document).on('click', '.delete-notification-btn', async function () {
+            if (!Auth.isAdmin()) {
+                Toast.show('Access denied: Admins only.', 'error');
+                return;
+            }
+
+            const id = $(this).data('id');
+            if (!confirm('Permanently remove this notification?')) return;
+
+            try {
+                await Api.delete(`/notifications/${id}`);
+                Toast.show('Notification deleted.', 'success');
+                loadNotifications();
+            } catch (err) {
+                Toast.show(err.message || 'Failed to delete notification.', 'error');
+            }
+        });
+    });
+    </script>
+</body>
+</html>

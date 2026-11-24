@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile — CivicEvents</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FDFBF7] min-h-screen flex flex-col">
+
+    <div id="navbar-container"></div>
+
+    <main class="flex-1 max-w-3xl mx-auto w-full px-4 py-8" role="main">
+
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-[#3D2614]">Account Profile</h1>
+            <p class="text-stone-500 mt-1">Manage your account information and preferences</p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-xl p-6 sm:p-10 border border-[#EADBCE]">
+
+            <!-- Profile Summary Card -->
+            <div class="flex items-center gap-4 mb-8 pb-6 border-b border-[#EADBCE]">
+                <div id="profile-avatar" class="w-16 h-16 rounded-full bg-gradient-to-tr from-[#5C3A21] to-[#D4A373] text-white font-extrabold text-2xl flex items-center justify-center shadow">
+                    ?
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h2 id="summary-name" class="text-xl font-bold text-[#3D2614]">User</h2>
+                        <span id="role-badge" class="text-xs uppercase font-extrabold px-2.5 py-0.5 rounded-full"></span>
+                    </div>
+                    <p id="summary-email" class="text-sm text-stone-500"></p>
+                    <p id="summary-created" class="text-xs text-stone-400 mt-0.5"></p>
+                </div>
+            </div>
+
+            <!-- Profile Form -->
+            <form id="profile-form" class="space-y-6" novalidate>
+                <!-- Full Name (Editable) -->
+                <div>
+                    <label for="profile-name" class="block text-sm font-semibold text-[#4A2E18] mb-1">Full Name</label>
+                    <input id="profile-name" type="text" required
+                           class="w-full px-4 py-2.5 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+                </div>
+
+                <!-- Email (Editable) -->
+                <div>
+                    <label for="profile-email" class="block text-sm font-semibold text-[#4A2E18] mb-1">Email Address</label>
+                    <input id="profile-email" type="email" required
+                           class="w-full px-4 py-2.5 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-[#8B5A2B] outline-none bg-white">
+                    <p class="text-xs text-stone-400 mt-1">Changing your email will update where notifications are delivered.</p>
+                </div>
+
+                <!--
+                  ======================================================================
+                  ROLE-BASED ACCESS GUARD — ROLE IMMUTABILITY
+                  ======================================================================
+                  Normal users CANNOT edit their own role or active status.
+                  These fields are displayed as read-only / disabled badges.
+                  Furthermore, the backend PATCH /api/users/profile/me endpoint
+                  strictly enforces:
+                    body('role').not().exists().withMessage('Cannot update role')
+                    body('is_active').not().exists().withMessage('Cannot update status')
+                  If a malicious actor sends a modified payload containing "role"
+                  or "is_active", the backend rejects it with 400 Bad Request.
+                  ======================================================================
+                -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#FAF7F2] p-4 rounded-xl border border-[#EADBCE]">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-stone-500 mb-1">Account Role</label>
+                        <input id="display-role" type="text" readonly disabled
+                               class="w-full px-3 py-2 bg-stone-100 border border-stone-300 rounded text-sm text-[#4A2E18] font-bold cursor-not-allowed">
+                        <span class="text-[11px] text-stone-400 mt-1 block">Assigned by system administrator only</span>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-stone-500 mb-1">Account Status</label>
+                        <input id="display-status" type="text" readonly disabled
+                               class="w-full px-3 py-2 bg-stone-100 border border-stone-300 rounded text-sm text-[#4A2E18] font-bold cursor-not-allowed">
+                        <span class="text-[11px] text-stone-400 mt-1 block">Account is in good standing</span>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end pt-4 border-t border-[#EADBCE]">
+                    <button type="submit" id="save-profile-btn"
+                            class="px-6 py-2.5 rounded-lg bg-[#7B4B28] hover:bg-[#5C3618] text-white text-sm font-semibold shadow transition">
+                        Update Profile
+                    </button>
+                </div>
+            </form>
+
+        </div>
+
+    </main>
+
+    <div id="footer-container"></div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+
+    <script>
+    /*
+     * ======================================================================
+     * ROLE-BASED ACCESS CONTROL — PROFILE SELF-MANAGEMENT
+     * ======================================================================
+     * - Auth.requireAuth(): Ensures only logged-in users access their profile.
+     * - Security rule: Users cannot escalate privileges or modify their role.
+     * ======================================================================
+     */
+    $(document).ready(function () {
+        if (!Auth.requireAuth()) return;
+
+        renderNavbar();
+        renderFooter();
+
+        loadProfile();
+
+        async function loadProfile() {
+            try {
+                const res = await Api.get('/users/profile/me');
+                const user = (res && res.data) ? res.data : Auth.getUser();
+
+                if (!user) return;
+
+                // Update UI fields
+                $('#profile-name').val(user.full_name || '');
+                $('#profile-email').val(user.email || '');
+                $('#summary-name').text(user.full_name || 'User');
+                $('#summary-email').text(user.email || '');
+                $('#summary-created').text('Member since ' + formatDate(user.created_at));
+
+                $('#display-role').val((user.role || 'user').toUpperCase());
+                $('#display-status').val(user.is_active ? 'ACTIVE' : 'INACTIVE');
+
+                const initial = (user.full_name || 'U').charAt(0).toUpperCase();
+                $('#profile-avatar').text(initial);
+
+                if (user.role === 'admin') {
+                    $('#role-badge').text('Administrator').addClass('bg-[#D4A373] text-[#2E1A0C]');
+                } else {
+                    $('#role-badge').text('Community Member').addClass('bg-[#F5EBE0] text-[#5C3618]');
+                }
+
+            } catch (err) {
+                Toast.show('Failed to load profile details.', 'error');
+            }
+        }
+
+        $('#profile-form').on('submit', async function (e) {
+            e.preventDefault();
+
+            const fullName = $('#profile-name').val().trim();
+            const email = $('#profile-email').val().trim();
+
+            if (!fullName || !email) {
+                Toast.show('Full name and email are required.', 'error');
+                return;
+            }
+
+            const $btn = $('#save-profile-btn');
+            $btn.prop('disabled', true).text('Saving changes...');
+
+            try {
+                /*
+                 * ROLE-BASED ACCESS CONTROL NOTE:
+                 * We explicitly ONLY send { full_name, email }.
+                 * Role and is_active are never sent to prevent tampering.
+                 */
+                const res = await Api.patch('/users/profile/me', {
+                    full_name: fullName,
+                    email: email
+                });
+
+                if (res && res.data) {
+                    // Update session user cache
+                    const current = Auth.getUser() || {};
+                    Auth.setUser({
+                        ...current,
+                        full_name: res.data.full_name,
+                        email: res.data.email
+                    });
+
+                    Toast.show('Profile updated successfully!', 'success');
+                    renderNavbar(); // Re-render navbar with updated name
+                    loadProfile();
+                }
+            } catch (err) {
+                if (err.status === 409) {
+                    Toast.show('This email address is already in use by another account.', 'error');
+                } else {
+                    Toast.show(err.message || 'Failed to update profile.', 'error');
+                }
+            } finally {
+                $btn.prop('disabled', false).text('Update Profile');
+            }
+        });
+    });
+    </script>
+</body>
+</html>

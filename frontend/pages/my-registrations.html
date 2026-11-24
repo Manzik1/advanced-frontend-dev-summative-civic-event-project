@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Registrations — CivicEvents</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FDFBF7] min-h-screen flex flex-col">
+
+    <div id="navbar-container"></div>
+
+    <main class="flex-1 max-w-5xl mx-auto w-full px-4 py-8" role="main">
+
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-[#3D2614]">My Registered Events</h1>
+            <p class="text-stone-500 mt-1">Review and manage your RSVPs for upcoming community gatherings</p>
+        </div>
+
+        <section id="registrations-container" class="space-y-4 mb-8" aria-label="Registered events list">
+            <!-- Populated via jQuery -->
+        </section>
+
+    </main>
+
+    <div id="footer-container"></div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+
+    <script>
+    /*
+     * ======================================================================
+     * ROLE-BASED ACCESS CONTROL — USER REGISTRATIONS
+     * ======================================================================
+     * - Auth.requireAuth(): Protects this personal view for logged-in users.
+     * - This page is designed for all authenticated roles (users and admins).
+     *   Normal users can register and cancel registrations for their own account.
+     * ======================================================================
+     */
+    $(document).ready(function () {
+        if (!Auth.requireAuth()) return;
+
+        renderNavbar();
+        renderFooter();
+
+        loadRegistrations();
+
+        async function loadRegistrations() {
+            showSkeleton('#registrations-container', 3);
+
+            try {
+                const res = await Api.get('/event-registrations/my-registrations');
+                const items = (res && res.data) ? res.data : [];
+
+                if (items.length === 0) {
+                    $('#registrations-container').html(`
+                        <div class="bg-white rounded-xl shadow p-8 text-center text-stone-500 border border-[#EADBCE]">
+                            <span class="text-4xl block mb-2">🎟️</span>
+                            <p class="text-lg font-medium">You haven't registered for any events yet.</p>
+                            <a href="events.html" class="inline-block mt-3 px-5 py-2.5 bg-[#7B4B28] hover:bg-[#5C3618] text-white font-semibold text-sm rounded-lg transition shadow-md">
+                                Browse Upcoming Events &rarr;
+                            </a>
+                        </div>
+                    `);
+                    return;
+                }
+
+                const listHtml = items.map(reg => {
+                    const isRegistered = reg.status === 'registered';
+
+                    return `
+                    <article class="bg-white rounded-xl shadow p-6 border border-[#EADBCE] flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition hover:shadow-md" aria-label="${reg.title}">
+                        <div class="space-y-1.5">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold px-2.5 py-0.5 rounded-full ${isRegistered ? 'bg-green-100 text-green-800' : 'bg-stone-100 text-stone-600'}">
+                                    ${isRegistered ? '✓ Confirmed RSVP' : '✕ Cancelled'}
+                                </span>
+                                <span class="text-xs text-stone-400">RSVP Date: ${formatDate(reg.created_at)}</span>
+                            </div>
+                            <h2 class="text-lg font-bold text-[#3D2614]">${reg.title}</h2>
+                            <p class="text-xs text-stone-500 flex items-center gap-3">
+                                <span>📍 ${reg.location || 'Location TBD'}</span>
+                                <span>🕒 ${formatDateTime(reg.starts_at)}</span>
+                            </p>
+                        </div>
+
+                        <div class="flex items-center gap-3">
+                            <a href="events.html" class="px-4 py-2 text-xs font-semibold bg-[#F5EBE0] hover:bg-[#EADBCE] text-[#5C3618] rounded-lg transition">
+                                View Event
+                            </a>
+                            ${isRegistered ? `
+                                <button class="cancel-rsvp-btn px-4 py-2 text-xs font-semibold bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition" data-id="${reg.event_id}">
+                                    Cancel RSVP
+                                </button>
+                            ` : ''}
+                        </div>
+                    </article>`;
+                }).join('');
+
+                $('#registrations-container').html(listHtml);
+
+            } catch (err) {
+                $('#registrations-container').html('<p class="text-red-500 text-center py-6">Failed to load your event registrations.</p>');
+            }
+        }
+
+        // Cancel RSVP Handler
+        $(document).on('click', '.cancel-rsvp-btn', async function () {
+            const eventId = $(this).data('id');
+            if (!confirm('Are you sure you want to cancel this event registration?')) return;
+
+            try {
+                await Api.post('/event-registrations/cancel', { event_id: eventId });
+                Toast.show('Event registration cancelled.', 'info');
+                loadRegistrations();
+            } catch (err) {
+                Toast.show(err.message || 'Failed to cancel registration.', 'error');
+            }
+        });
+    });
+    </script>
+</body>
+</html>
