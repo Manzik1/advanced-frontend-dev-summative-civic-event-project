@@ -1,0 +1,85 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="description" content="CivicEvents+ connects communities with local events, announcements and public services.">
+
+    <title>CivicEvents | City Events & Services Portal</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-[#FDFBF7] min-h-screen flex items-center justify-center">
+
+    <!-- Application loading screen -->
+    <main class="text-center p-10 bg-white rounded-2xl shadow-xl border border-[#EADBCE] max-w-md mx-4">
+
+        <span class="text-6xl inline-block mb-5" aria-hidden="true">
+            🏛️
+        </span>
+
+        <h1 class="text-3xl font-bold text-[#3D2614]">
+            CivicEvents
+        </h1>
+
+        <p class="text-stone-500 text-sm mt-2">
+            Connecting communities through events and services.
+        </p>
+
+        <!-- Loading indicator -->
+        <div class="mt-6 flex justify-center" role="status" aria-live="polite">
+            <div class="w-8 h-8 border-4 border-[#EADBCE] border-t-[#8B5E3C] rounded-full animate-spin"></div>
+            <span class="sr-only">Loading CivicEvents+</span>
+        </div>
+
+        <p id="loading-message" class="text-xs text-stone-400 mt-4">
+            Preparing your experience...
+        </p>
+
+    </main>
+
+    <!-- JavaScript dependencies -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/auth.js"></script>
+
+    <script>
+        $(document).ready(function () {
+
+            /*
+             * APPLICATION ENTRY POINT
+             * Checks the user's authentication status before routing.
+             */
+
+            try {
+
+                if (Auth.isLoggedIn()) {
+
+                    // Authenticated users proceed to the dashboard.
+                    window.location.replace('pages/dashboard.html');
+
+                } else {
+
+                    // Unauthenticated users proceed to the login page.
+                    window.location.replace('pages/login.html');
+
+                }
+
+            } catch (error) {
+
+                console.error('Application startup error:', error);
+
+                $('#loading-message').text(
+                    'Unable to start the application. Please refresh the page.'
+                );
+
+            }
+
+        });
+    </script>
+
+</body>
+</html>
