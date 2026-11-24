@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Promos & Video Spotlights — CivicEvents</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FDFBF7] min-h-screen flex flex-col">
+
+    <div id="navbar-container"></div>
+
+    <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-8" role="main">
+
+        <!-- Page Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-[#3D2614]">Promotional Spotlights</h1>
+                <p class="text-stone-500 mt-1">Watch accessible promotional videos and stories with closed captions</p>
+            </div>
+
+            <!--
+              ======================================================================
+              ROLE-BASED ACCESS GUARD — Admin-Only Promo Creation
+              ======================================================================
+              The "Create Promo" button is rendered ONLY when Auth.isAdmin() is true.
+              Normal users cannot upload promos and will never see this button.
+              ======================================================================
+            -->
+            <div id="admin-create-promo" class="hidden">
+                <a href="promo-form.html"
+                   class="inline-flex items-center gap-2 bg-[#7B4B28] hover:bg-[#5C3618] text-white px-5 py-2.5 rounded-lg font-medium shadow transition">
+                    <span>🎬</span>
+                    <span>Upload Promo Video</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Promos Grid -->
+        <section id="promos-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8" aria-label="Promotions list">
+            <!-- Populated via jQuery -->
+        </section>
+
+        <!-- Pagination Controls -->
+        <div id="pagination-controls" class="flex items-center justify-center gap-3 py-4"></div>
+
+    </main>
+
+    <!--
+      ======================================================================
+      ACCESSIBLE VIDEO PLAYER MODAL WITH CAPTIONS
+      ======================================================================
+    -->
+    <div id="video-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-black/80 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="video-title">
+        <div class="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden relative">
+            <button id="close-video-btn" class="absolute top-4 right-4 z-10 bg-black/60 text-white hover:bg-black/80 w-8 h-8 rounded-full flex items-center justify-center text-xl font-bold" aria-label="Close video player">&times;</button>
+
+            <!-- Video Player -->
+            <div class="bg-black w-full aspect-video flex items-center justify-center">
+                <video id="player-video" controls class="w-full h-full" preload="metadata" crossorigin="anonymous">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+
+            <div class="p-6">
+                <h2 id="video-title" class="text-xl font-bold text-gray-900 mb-2"></h2>
+                <p id="video-desc" class="text-sm text-gray-600 mb-4 whitespace-pre-line"></p>
+
+                <!-- Transcript / Captions Section -->
+                <div class="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                    <h3 class="text-xs uppercase font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+                        <span>📝</span> Closed Captions / Transcript
+                    </h3>
+                    <p id="video-caption-text" class="text-xs text-gray-600 italic leading-relaxed"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="footer-container"></div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/ui.js"></script>
+
+    <script>
+    /*
+     * ======================================================================
+     * ROLE-BASED ACCESS CONTROL — PROMOS MODULE
+     * ======================================================================
+     * - Auth.requireAuth(): Protects page so only authenticated users access it.
+     * - Auth.isAdmin():
+     *   * If Admin: Can see "Upload Promo Video", Edit, Delete, and Publish toggles.
+     *   * If User: Can only watch published videos with closed captions.
+     * ======================================================================
+     */
+    $(document).ready(function () {
+        if (!Auth.requireAuth()) return;
+
+        renderNavbar();
+        renderFooter();
+
+        if (Auth.isAdmin()) {
+            $('#admin-create-promo').removeClass('hidden');
+        }
+
+        let currentPage = 1;
+        let promosData = [];
+
+        loadPromos(currentPage);
+
+        async function loadPromos(page = 1) {
+            showSkeleton('#promos-container', 3);
+
+            try {
+                const res = await Api.get(`/promos?page=${page}&limit=6`);
+                let items = (res && res.data) ? res.data : [];
+                const pagination = res.pagination || {};
+                const isAdmin = Auth.isAdmin();
+
+                // Non-admins only see published promos
+                if (!isAdmin) {
+                    items = items.filter(p => p.published !== false);
+                }
+
+                promosData = items;
+
+                if (items.length === 0) {
+                    $('#promos-container').html(`
+                        <div class="col-span-full bg-white rounded-xl shadow p-8 text-center text-gray-500">
+                            <span class="text-4xl block mb-2">🎬</span>
+                            <p class="text-lg font-medium">No promo videos available currently.</p>
+                        </div>
+                    `);
+                    $('#pagination-controls').empty();
+                    return;
+                }
+
+                const cardsHtml = items.map(p => `
+                    <article class="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition flex flex-col border border-[#EADBCE]" aria-label="${p.title}">
+                        <!-- Video Thumbnail / Play Overlay -->
+                        <div class="relative bg-stone-900 aspect-video flex items-center justify-center group cursor-pointer play-video-trigger" data-id="${p.id}">
+                            <div class="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition"></div>
+                            <span class="relative z-10 w-14 h-14 rounded-full bg-[#7B4B28]/90 text-white flex items-center justify-center text-2xl group-hover:scale-110 shadow-lg transition">▶</span>
+                            ${isAdmin ? `
+                                <span class="absolute top-3 left-3 z-10 text-xs font-bold px-2 py-0.5 rounded shadow ${p.published ? 'bg-green-600 text-white' : 'bg-stone-700 text-stone-200'}">
+                                    ${p.published ? 'Published' : 'Draft / Unpublished'}
+                                </span>
+                            ` : ''}
+                        </div>
+
+                        <div class="p-5 flex-1 flex flex-col">
+                            <h2 class="text-lg font-bold text-[#3D2614] mb-2 line-clamp-1">${p.title}</h2>
+                            <p class="text-sm text-stone-600 line-clamp-2 flex-1 mb-4">${p.description || 'No description.'}</p>
+
+                            <div class="border-t border-[#EADBCE]/50 pt-3 flex items-center justify-between text-xs text-stone-500">
+                                <span>📅 ${formatDate(p.created_at)}</span>
+
+                                <!--
+                                  ======================================================================
+                                  ROLE-BASED ACCESS GUARD:
+                                  Admin-only controls (Publish toggle, Edit, Delete).
+                                  ======================================================================
+                                -->
+                                ${isAdmin ? `
+                                <div class="flex items-center gap-1">
+                                    <button class="toggle-publish-promo px-2.5 py-1 text-xs font-semibold rounded border transition ${p.published ? 'border-[#8B5A2B] text-[#8B5A2B] hover:bg-[#FAF5F0]' : 'border-green-600 text-green-700 hover:bg-green-50'}" data-id="${p.id}" data-published="${p.published}">
+                                        ${p.published ? 'Unpublish' : 'Publish'}
+                                    </button>
+                                    <a href="promo-form.html?id=${p.id}" class="p-1.5 text-[#7B4B28] hover:bg-[#FAF5F0] rounded" title="Edit">✏️</a>
+                                    <button class="delete-promo-btn p-1.5 text-red-600 hover:bg-red-50 rounded" data-id="${p.id}" data-title="${p.title}" title="Delete">🗑️</button>
+                                </div>
+                                ` : `
+                                <button class="play-video-trigger font-semibold text-[#7B4B28] hover:text-[#5C3618]" data-id="${p.id}">
+                                    Watch Video &rarr;
+                                </button>
+                                `}
+                            </div>
+                        </div>
+                    </article>
+                `).join('');
+
+                $('#promos-container').html(cardsHtml);
+
+                // Render pagination if available
+                if (pagination.pages > 1) {
+                    $('#pagination-controls').html(`
+                        <button id="prev-page" class="px-3 py-1.5 rounded border border-gray-300 text-sm font-medium hover:bg-gray-100" ${page === 1 ? 'disabled' : ''}>Previous</button>
+                        <span class="text-sm font-semibold text-gray-700">Page ${page} of ${pagination.pages}</span>
+                        <button id="next-page" class="px-3 py-1.5 rounded border border-gray-300 text-sm font-medium hover:bg-gray-100" ${page === pagination.pages ? 'disabled' : ''}>Next</button>
+                    `);
+                } else {
+                    $('#pagination-controls').empty();
+                }
+
+            } catch (err) {
+                $('#promos-container').html('<p class="text-red-500 text-center py-6">Failed to load promos.</p>');
+            }
+        }
+
+        // Open Video Modal with Accessible WebVTT Captions
+        $(document).on('click', '.play-video-trigger', function () {
+            const promoId = $(this).data('id');
+            const promo = promosData.find(p => p.id === promoId);
+            if (!promo) return;
+
+            $('#video-title').text(promo.title);
+            $('#video-desc').text(promo.description || '');
+            $('#video-caption-text').text(promo.caption_text || 'No closed caption transcript provided.');
+
+            const video = document.getElementById('player-video');
+
+            // Remove existing tracks and source
+            $(video).empty();
+
+            // Set video source
+            const source = document.createElement('source');
+            source.src = promo.video_url;
+            source.type = 'video/mp4';
+            video.appendChild(source);
+
+            // Generate WebVTT track from caption_text
+            if (promo.caption_text) {
+                const vttContent = `WEBVTT\n\n00:00:00.000 --> 00:10:00.000\n${promo.caption_text}`;
+                const blob = new Blob([vttContent], { type: 'text/vtt' });
+                const trackUrl = URL.createObjectURL(blob);
+
+                const track = document.createElement('track');
+                track.kind = 'captions';
+                track.label = 'English';
+                track.srclang = 'en';
+                track.src = trackUrl;
+                track.default = true;
+                video.appendChild(track);
+            }
+
+            video.load();
+            $('#video-modal').removeClass('hidden');
+            video.play().catch(() => {}); // Play or allow user click
+        });
+
+        // Close Video Modal
+        $('#close-video-btn').on('click', function () {
+            const video = document.getElementById('player-video');
+            video.pause();
+            $('#video-modal').addClass('hidden');
+        });
+
+        // Publish / Unpublish Promo (Admin Only)
+        $(document).on('click', '.toggle-publish-promo', async function () {
+            if (!Auth.isAdmin()) return;
+            const id = $(this).data('id');
+            const isPublished = $(this).data('published') === true;
+
+            try {
+                if (isPublished) {
+                    await Api.patch(`/promos/${id}/unpublish`);
+                    Toast.show('Promo unpublished.', 'info');
+                } else {
+                    await Api.patch(`/promos/${id}/publish`);
+                    Toast.show('Promo published successfully!', 'success');
+                }
+                loadPromos(currentPage);
+            } catch (err) {
+                Toast.show(err.message || 'Action failed.', 'error');
+            }
+        });
+
+        // Delete Promo (Admin Only)
+        $(document).on('click', '.delete-promo-btn', async function () {
+            if (!Auth.isAdmin()) return;
+            const id = $(this).data('id');
+            const title = $(this).data('title');
+            if (!confirm(`Delete promo "${title}"?`)) return;
+
+            try {
+                await Api.delete(`/promos/${id}`);
+                Toast.show('Promo deleted successfully.', 'success');
+                loadPromos(currentPage);
+            } catch (err) {
+                Toast.show(err.message || 'Failed to delete promo.', 'error');
+            }
+        });
+    });
+    </script>
+</body>
+</html>
